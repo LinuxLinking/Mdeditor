@@ -82,6 +82,7 @@ npm run build
 ### 2026-09-21
 
 **工程化**
+- 新增应用图标（teal 渐变 + 白色 M 与光标条，替换 Flutter 默认图标），Android 含 adaptive icon，iOS 全槽位覆盖；矢量生成脚本入库（`test/icon_generation_test.dart`）
 - 新增 CI 双工作流：`Build APK`（push 验证 + Release 自动挂 `Mdeditor-<tag>.apk` / `Mdeditor-latest.apk`）、`Build IPA`（无签名 IPA，`ios-v*` 预发布自动挂载）
 - 版本号单源化：删除 gradle 硬编码 versionCode/versionName，以 pubspec.yaml `version` 为唯一来源
 - 签名可降级机制：CI 配置 keystore secrets 后自动使用正式签名，未配置时回退 debug 签名（配置步骤见 AGENTS.md 施工单A）
