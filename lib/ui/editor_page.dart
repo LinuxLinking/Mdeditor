@@ -145,7 +145,12 @@ class _EditorPageState extends State<EditorPage> {
     } catch (e, s) {
       if (!mounted) return;
       ErrorHandler.report(e, s);
-      _showMessage('${AppLocalizations.of(context).t('save_failed')}: $e');
+      _showMessage(
+        ErrorHandler.display(
+          AppLocalizations.of(context).t('save_failed'),
+          e,
+        ),
+      );
     }
   }
 
@@ -176,7 +181,7 @@ class _EditorPageState extends State<EditorPage> {
     } catch (e, s) {
       if (!mounted) return;
       ErrorHandler.report(e, s);
-      _showMessage('${l.t('save_as_failed')}: $e');
+      _showMessage(ErrorHandler.display(l.t('save_as_failed'), e));
     }
   }
 
@@ -236,7 +241,7 @@ class _EditorPageState extends State<EditorPage> {
     } catch (e, s) {
       if (!mounted) return;
       ErrorHandler.report(e, s);
-      _showMessage('${l.t('pdf_export_failed')}: $e');
+      _showMessage(ErrorHandler.display(l.t('pdf_export_failed'), e));
     }
   }
 
@@ -278,7 +283,7 @@ class _EditorPageState extends State<EditorPage> {
     } catch (e, s) {
       if (!mounted) return;
       ErrorHandler.report(e, s);
-      _showMessage('${l.t('docx_generate_failed')}: $e');
+      _showMessage(ErrorHandler.display(l.t('docx_generate_failed'), e));
       return;
     }
     if (!mounted) return;
@@ -291,7 +296,7 @@ class _EditorPageState extends State<EditorPage> {
     } catch (e, s) {
       if (!mounted) return;
       ErrorHandler.report(e, s);
-      _showMessage('${l.t('write_failed')}: $e');
+      _showMessage(ErrorHandler.display(l.t('write_failed'), e));
     }
   }
 
@@ -325,7 +330,9 @@ class _EditorPageState extends State<EditorPage> {
       _showMessage(l.format('html_exported', {'name': suggestedName}));
     } catch (error, stack) {
       ErrorHandler.report(error, stack);
-      if (mounted) _showMessage('${l.t('html_export_failed')}: $error');
+      if (mounted) {
+        _showMessage(ErrorHandler.display(l.t('html_export_failed'), error));
+      }
     }
   }
 
