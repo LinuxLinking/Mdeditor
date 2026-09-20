@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../native/platform_support.dart';
+
 /// SAF (Storage Access Framework) Platform Channel 的 Dart 侧封装。
 ///
 /// 对应原生 [android/app/src/main/kotlin/com/mdeditor/app/SafChannel.kt],
@@ -19,6 +21,7 @@ class SafChannel {
 
   /// 通过 SAF 打开文件。返回选中的 `content://` URI;用户取消返回 null。
   static Future<Uri?> openDocument({required String mime}) async {
+    requireAndroid('openDocument');
     final s = await _ch.invokeMethod<String>('openDocument', {'mime': mime});
     return s == null ? null : Uri.parse(s);
   }
@@ -28,6 +31,7 @@ class SafChannel {
     required String suggestedName,
     required String mime,
   }) async {
+    requireAndroid('createDocument');
     final s = await _ch.invokeMethod<String>('createDocument', {
       'suggestedName': suggestedName,
       'mime': mime,
@@ -36,19 +40,25 @@ class SafChannel {
   }
 
   /// 读取 `content://` URI 文本。失败抛 [PlatformException]。
-  static Future<String?> readUri(Uri uri) =>
-      _ch.invokeMethod<String>('readUri', {'uri': uri.toString()});
+  static Future<String?> readUri(Uri uri) {
+    requireAndroid('readUri');
+    return _ch.invokeMethod<String>('readUri', {'uri': uri.toString()});
+  }
 
   /// 以 `"wt"`(截断)模式写入字节到 `content://` URI。
-  static Future<void> writeUri(Uri uri, Uint8List bytes) =>
-      _ch.invokeMethod<void>('writeUri', {
-        'uri': uri.toString(),
-        'bytes': bytes,
-      });
+  static Future<void> writeUri(Uri uri, Uint8List bytes) {
+    requireAndroid('writeUri');
+    return _ch.invokeMethod<void>('writeUri', {
+      'uri': uri.toString(),
+      'bytes': bytes,
+    });
+  }
 
   /// 查询 URI 对应文件的显示名(`OpenableColumns.DISPLAY_NAME`)。
-  static Future<String?> queryName(Uri uri) =>
-      _ch.invokeMethod<String>('queryName', {'uri': uri.toString()});
+  static Future<String?> queryName(Uri uri) {
+    requireAndroid('queryName');
+    return _ch.invokeMethod<String>('queryName', {'uri': uri.toString()});
+  }
 }
 
 /// 便捷别名:封装 [SafChannel.queryName] 的常见用法。

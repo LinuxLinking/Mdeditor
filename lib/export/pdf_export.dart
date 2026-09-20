@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../native/platform_support.dart';
+
 /// PDF 导出器:通过 Android `PrintManager` 把 HTML 发到系统打印对话框。
 ///
 /// 设计参见 dev-doc.md 第 7.5 节(Dart 侧)+ 第 10 节(Kotlin 侧)。
@@ -24,6 +26,7 @@ class PdfExporter {
     String htmlFragment, {
     String jobName = 'Mdeditor Document',
   }) async {
+    requireAndroid('printHtml');
     final fullHtml = _wrapHtml(htmlFragment, jobName);
     await _channel.invokeMethod('printHtml', {
       'html': fullHtml,

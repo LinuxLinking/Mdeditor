@@ -1,0 +1,94 @@
+name: Build IPA
+
+# iOS 构建交付链路（无签名 IPA，交付后由用户侧重签侧载）：
+# 1. push 到 master 且 iOS/Flutter 相关路径有改动时构建验证。
+# 2. 发布 ios-v* tag 的 Release（published，prerelease）时构建并附
+#    Mdeditor-ios-<版本>.ipa。
+#
+# 无签名 IPA 不能直接安装：用户需用 AltStore / Sideloadly / TrollStore
+# 等工具以自己的 Apple ID 重签后侧载（步骤见 README「iOS 侧载版」一节）。
+# 仅作为里程碑使用，发 ios-v* 时请勾选 pre-release，避免它进入
+# releases/latest（将来若有官网直链或 latest 资产约定，依赖正式版）。
+#
+# 当前 iOS 功能状态：UI 与 WebView 编辑器可用；打开/保存文件、导出等
+# 依赖 Android 原生通道的功能会显示「iOS 适配开发中」提示
+# （见 AGENTS.md 施工单B）。
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'ios/**'
+      - 'lib/**'
+      - 'assets/**'
+      - 'test/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/build-ios.yml'
+  workflow_dispatch:
+  release:
+    types:
+      - published
+
+jobs:
+  build:
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'ios-')
+    runs-on: macos-15   # 固定镜像版本，随其附带的 Xcode 大版本一同锁定；升级须显式提交
+    permissions:
+      contents: write  # release 事件时上传资产需要写权限
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          channel: stable
+          cache: true
+
+      - name: Show toolchain
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build unsigned IPA
+        run: |
+          flutter build ipa --release --no-codesign
+          # --no-codesign 正常会直接产出未签名 ipa；个别版本只产出 xcarchive，
+          # 此时从 archive 手动打包 Payload 兜底。
+          if ls build/ios/ipa/*.ipa >/dev/null 2>&1; then
+            cp build/ios/ipa/*.ipa Mdeditor-unsigned.ipa
+          else
+            APP_PATH=$(find build/ios/archive -name 'Runner.app' -type d | head -1)
+            if [ -z "$APP_PATH" ]; then
+              echo '::error::未找到 ipa 或 archive 产物，请检查上方构建日志'
+              exit 1
+            fi
+            mkdir Payload
+            cp -R "$APP_PATH" Payload/Runner.app
+            zip -qr Mdeditor-unsigned.ipa Payload
+          fi
+          unzip -l Mdeditor-unsigned.ipa | head -5
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mdeditor-ipa
+          path: Mdeditor-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach IPA to GitHub Release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VER="${TAG#ios-}"
+          cp Mdeditor-unsigned.ipa "Mdeditor-ios-${VER}.ipa"
+          gh release upload "$TAG" "Mdeditor-ios-${VER}.ipa" --clobber

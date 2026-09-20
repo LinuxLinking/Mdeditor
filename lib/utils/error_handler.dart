@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../native/platform_support.dart';
+
 /// 错误类别,用于做差异化提示。
 ///
 /// 设计对齐 dev-doc.md Phase 6 第 1725 行"错误处理(URI 失效、文件读写
 /// 失败、内存不足)"。
 enum ErrorKind {
+  /// 平台不支持(如 iOS 上调用仅有 Android 实现的原生通道)
+  platformUnsupported,
+
   /// URI 失效(权限丢失、文件被删、外部存储卸载)
   uriRevoked,
 
@@ -38,6 +43,10 @@ enum ErrorKind {
 class ErrorHandler {
   /// 把异常分类。
   static ErrorKind classify(Object error) {
+    // 类型判断优先于字符串匹配,避免文案撞车。
+    if (error is PlatformUnsupportedError) {
+      return ErrorKind.platformUnsupported;
+    }
     final s = error.toString().toLowerCase();
     if (s.contains('permission') ||
         s.contains('revoked') ||
@@ -58,6 +67,8 @@ class ErrorHandler {
   /// 中文提示文案,用于 SnackBar。
   static String messageFor(ErrorKind kind) {
     switch (kind) {
+      case ErrorKind.platformUnsupported:
+        return 'iOS 适配开发中,此功能暂不可用';
       case ErrorKind.uriRevoked:
         return '文件访问权限已失效,请重新打开';
       case ErrorKind.ioFailure:
@@ -75,6 +86,23 @@ class ErrorHandler {
   static void report(Object error, StackTrace? stack) {
     debugPrint('ErrorHandler.report: $error');
     if (stack != null) debugPrint('$stack');
+  }
+
+  /// UI 层 catch 分支的统一显示文案:
+  /// 平台不支持 → 本地化降级提示;其他 → "<前缀>: <原始错误>"。
+  ///
+  /// 用法:
+  /// ```dart
+  /// } catch (e, s) {
+  ///   ErrorHandler.report(e, s);
+  ///   _showMessage(ErrorHandler.display(l.t('save_failed'), e));
+  /// }
+  /// ```
+  static String display(String fallbackLabel, Object error) {
+    if (error is PlatformUnsupportedError) {
+      return messageFor(ErrorKind.platformUnsupported);
+    }
+    return '$fallbackLabel: $error';
   }
 
   /// 上报 + 给用户 SnackBar 反馈。
