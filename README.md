@@ -59,6 +59,8 @@ flutter build appbundle --release
 CI 会自动构建并把 APK 附到该 Release（安卓）/ 发 `ios-vX.Y.Z` 预发布得无签名 IPA（iOS）。
 push 到 master 时 CI 也会自动构建验证。详见 `.github/workflows/`。
 
+没有 Mac / 本地开发环境也能参与开发与调试，方法见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+
 ## 前端资源打包
 
 当你修改 `milkdown_src/` 下的前端代码后，重新构建编辑器资源：

@@ -66,3 +66,6 @@ node_modules/
 !README.en.md
 !README.ja.md
 !README.fr.md
+!AGENTS.md
+!DEVELOPMENT.md
+!docs/**
