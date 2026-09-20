@@ -1,9 +1,9 @@
 # 工作计划：CI 工作流搭建 + iOS 构建链路（ci-and-ios-v1）
 
-> 状态：**已完成（本地验收全绿）**——CI 实际构建验证待仓库推送后按 §9 栦对单执行
+> 状态：**已完成并全链路验证**——2026-09-21 在 honlnk/Mdeidetor fork 完成首跑，工作流与 Release 挂载全部按设计工作
 > 日期：2026-09-21
 > 执行环境：macOS（无 Xcode / 无 Android SDK / 无本地 Flutter，构建验证依赖 CI，与 MDOpener 项目工作模式一致）
-> 交付目标仓库：LinuxLinking/Mdeidetor（上游）；本次施工在 honlnk/Mdeidetor fork 内进行，**不 push、不发 PR**，推送方式由仓库主人决定
+> 交付目标仓库：LinuxLinking/Mdeidetor（上游）；本次施工在 honlnk/Mdeidetor fork 内进行，已在 fork 推送并验证（未动上游），合并方式由仓库主人决定
 
 ## 1. 背景与目标
 
@@ -150,9 +150,45 @@
 - **偏差（重要）**：发现仓库根 `.gitignore` 的 `*.md` 全忽略规则（仅白名单 README 系）静默吞掉了 `AGENTS.md` 与 `docs/plans/ci-and-ios-v1.md`——**此前两个提交声称已交付的这两份文档实际从未进入 git**（`git add -A` 跳过 ignored 文件，`git status` 也不显示，形成假象）；README 中的 AGENTS.md 链接在 git 历史里一度指向不存在的文件。本轮在 .gitignore 白名单补 `!AGENTS.md`、`!DEVELOPMENT.md`、`!docs/**`（保留「根目录不乱放 md」的既有意图）并补交全部文档。核对确认：Kotlin/Dart/工作流/图标产物此前均已正常入库，仅 md 文档受影响；CI 构建链路不受影响。
 - 教训记档：**交付含文档的项目时必须以 `git ls-files` 核对实际入库清单，不能只看 `git status`/`git add` 的输出下结论**（ignored 文件在两者中都不出现）。
 
+### 2026-09-21 · 追加：fork 上完成 CI 全链路验证（§9 提前执行）
+
+在 honlnk/Mdeidetor（协作者自己的 fork，不影响上游）把本计划全部提交推送上去，
+按 §9 核对单实测，**全部通过**：
+
+| 验证项 | 结果 |
+|---|---|
+| push 触发双工作流 | ✅ Build APK / Build IPA 同时触发并全绿（约 8 分钟） |
+| flutter test（23 个）双平台 | ✅ ubuntu 与 macos runner 均通过 |
+| 国内镜像（腾讯/阿里）CI 可达性 | ✅ gradle 9.3.1 与依赖拉取无超时，无需镜像预案 |
+| 签名降级机制 | ✅ 日志出现预期 `::warning::未配置 ANDROID_KEYSTORE_BASE64…`，产物为 debug 签名 |
+| artifact 产物 | ✅ `mdeditor-apk`→app-release.apk 65.5MB（与上游 v1.0.0 手动构建体积一致）；`mdeditor-ipa`→Mdeditor-unsigned.ipa 9.25MB，Payload/Runner.app 结构完整（含 WKWebView 插件 bundle） |
+| Release 自动挂载 | ✅ 发 `v0.9.9-ci-test`（prerelease）→ 自动挂 `Mdeditor-v0.9.9-ci-test.apk` + `Mdeditor-latest.apk`；发 `ios-v0.9.9-ci-test` → 自动挂 `Mdeditor-ios-0.9.9-ci-test.ipa`（前缀正确剥离） |
+| tag 路由互斥 | ✅ `ios-v*` 的 Build APK 正确 skip，`v*` 的 Build IPA 正确 skip |
+| 测试清理 | ✅ `gh release delete <tag> --cleanup-tag --yes` 删除两个测试 Release 与 tag |
+
+**GitHub 侧操作记录**（上游部署时同样适用/需要注意的）：
+
+1. **push 含 `.github/workflows/` 的提交**：如果 remote 是 https 且凭据走 gh 的
+   OAuth token，会被拒（`refusing to allow an OAuth App to … without workflow scope`）。
+   两个解法任选：remote 改 SSH（`git remote set-url origin git@github.com:<owner>/<repo>.git`，
+   本次采用，个人 SSH key 有完整权限）；或 `gh auth refresh -s workflow` 补授权。
+2. fork 的 Actions 已启用（`allowed_actions: all`），无需手动开启；源头仓库
+   （LinuxLinking/Mdeidetor）Actions 默认启用，同样无需操作。
+3. 发测试 Release 用 `gh release create <tag> --prerelease --target master`，
+   验证后 `gh release delete <tag> --cleanup-tag --yes` 连 tag 一起清理。
+4. 整个验证过程无需配置任何 secrets——签名降级机制按设计工作。
+
 ## 9. CI 首跑核对单（push 后人工执行）
 
-> 本次施工不含 push。仓库主人（或协作者经其同意）推送后按序核对：
+> **1~5 项已由协作者在 honlnk/Mdeidetor fork 实测通过**（记录见 §8 施工日志「fork 上完成 CI 全链路验证」）。
+> 上游（LinuxLinking/Mdeidetor）合并这些提交后，只需三件事：
+> 1. 确认合并提交的首次 push 双工作流变绿（上游 Actions 默认启用，无需任何设置）；
+> 2. 想正式发版时按 DEVELOPMENT.md §5 流程操作；
+> 3. 按需执行 AGENTS.md 施工单A（配置正式签名 secrets——不配也能跑，只是 debug 签名）。
+
+
+
+> 以下为核对单原文（fork 已按序执行）：
 
 1. push 后 Actions 页两个工作流均出现且绿：`Build APK`（push 触发）、`Build IPA`（push 触发）
 2. 若 gradle 依赖拉取超时/失败：按 §3 预案在 workflow 中临时替换镜像源后重跑，并将结论回填本节

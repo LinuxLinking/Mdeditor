@@ -207,6 +207,7 @@ CI 自动挂载资产：安卓 `Mdeditor-<tag>.apk` + `Mdeditor-latest.apk`；iO
 |---|---|
 | push 了但 CI 没跑 | 检查改动是否碰到触发路径；纯文档不触发 |
 | 构建失败不知道哪错 | 日志从上往下第一个编译错误才是根因，后面的多是连带 |
+| push 含 workflow 文件的提交被拒（OAuth App without workflow scope） | remote 改 SSH：`git remote set-url origin git@github.com:<owner>/<repo>.git`（个人 SSH key 有完整权限）；或 `gh auth refresh -s workflow` 补授权 |
 | CI 上 gradle 依赖拉取超时 | 国内镜像在海外机房偶发不稳；重跑一次，仍失败让 AI 在 workflow 里临时把 distributionUrl 换成 services.gradle.org |
 | 装新 APK 提示签名冲突 | 当前是 debug 签名回退阶段的预期行为，卸载旧包再装；根治见 AGENTS.md 施工单A |
 | iOS 上功能点了没反应或提示「适配开发中」 | 预期降级，不是 bug；想优先适配哪个功能直接对 AI 说 |
