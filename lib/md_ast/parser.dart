@@ -19,9 +19,11 @@ export 'ast.dart' show ImageInline;
 /// 否则 DOCX 内的 `<` `>` `&` 会变成 `&lt;` `&gt;` `&amp;` 后再被 DOCX 二次转义。
 class Parser {
   Document parse(String text) {
+    // markdown 7.x 的 ExtensionSet.gitHubFlavored 不含 TableSyntax,
+    // 必须显式追加;否则管道表格语法会被忽略,_convertBlock('table') 永远走不到。
     final doc = md.Document(
       extensionSet: md.ExtensionSet.gitHubFlavored,
-      blockSyntaxes: const [],
+      blockSyntaxes: const [md.TableSyntax()],
       inlineSyntaxes: const [],
       encodeHtml: false,
     );
@@ -165,20 +167,28 @@ class Parser {
   }
 
   Table _convertTable(md.Element tableEl) {
+    // markdown 包把表格行包在 thead / tbody 里,所以这里要递归一层。
     final rows = <List<List<Inline>>>[];
     final alignments = <int>[];
-    for (final row in tableEl.children ?? const <md.Node>[]) {
-      if (row is! md.Element) continue;
-      if (row.tag != 'tr') continue;
-      final cells = <List<Inline>>[];
-      for (final cell in row.children ?? const <md.Node>[]) {
-        if (cell is md.Element && (cell.tag == 'th' || cell.tag == 'td')) {
-          cells.add(_convertInlines(cell.children));
+    void visit(md.Node node) {
+      if (node is! md.Element) return;
+      if (node.tag == 'tr') {
+        final cells = <List<Inline>>[];
+        for (final cell in node.children ?? const <md.Node>[]) {
+          if (cell is md.Element && (cell.tag == 'th' || cell.tag == 'td')) {
+            cells.add(_convertInlines(cell.children));
+          }
+        }
+        if (cells.isNotEmpty) rows.add(cells);
+      } else if (node.tag == 'thead' || node.tag == 'tbody' || node.tag == 'tfoot') {
+        for (final c in node.children ?? const <md.Node>[]) {
+          visit(c);
         }
       }
-      if (cells.isNotEmpty) rows.add(cells);
     }
-    // 对齐信息:markdown 包暂存在 _alignments 不可访问,首版默认全左对齐
+    for (final c in tableEl.children ?? const <md.Node>[]) {
+      visit(c);
+    }
     if (rows.isNotEmpty) {
       alignments.addAll(List.filled(rows.first.length, -1));
     }

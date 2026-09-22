@@ -86,6 +86,20 @@ class EditorController extends ChangeNotifier {
   String? pendingInitialContent;
   String theme = 'light';
 
+  /// Bug fix: Soft keyboard does not appear when entering the editor.
+  ///
+  /// Android WebView on some OEM ROMs does not auto-focus contenteditable
+  /// elements (not real input). Milkdown (ProseMirror) also does not place
+  /// cursor on init. Fix: when Milkdown reports `ready` via MdBridge,
+  /// inject the following JS to focus the editor node and place cursor
+  /// at the document start.
+  ///
+  /// Hit order (specific to loose):
+  ///   1. `.ProseMirror` (Milkdown contenteditable container)
+  ///   2. any `[contenteditable="true"]`
+  ///   3. `<textarea>` (fallback when Milkdown fails)
+  static const String kFocusEditorScript = '(function(){var e=document.querySelector(".ProseMirror")||document.querySelector("[contenteditable="true"]")||document.querySelector("textarea");if(e&&e.focus){e.focus();try{var s=window.getSelection();if(s&&e.firstChild){var r=document.createRange();r.setStart(e.firstChild,0);r.collapse(true);s.removeAllRanges();s.addRange(r);}}catch(_){}}})()';
+
   /// 生成只含 ASCII 的 JS 字符串字面量。
   /// 所有非 ASCII 字符转义为 `\uXXXX`，避免 Android WebView 在
   /// MethodChannel/evaluateJavascript 链路中发生编码差异。
@@ -143,6 +157,9 @@ class EditorController extends ChangeNotifier {
           _isReady = true;
           notifyListeners();
           _diagnoseEditorDom();
+          // Bug fix: Android WebView does not auto-focus contenteditable.
+          // Inject JS to force focus when Milkdown reports ready.
+          unawaited(_focusEditor());
           final initial = pendingInitialContent;
           if (initial != null) {
             // The file may finish reading after onPageFinished. Re-apply it
@@ -497,5 +514,24 @@ class EditorController extends ChangeNotifier {
     _pendingNativeMarkdown = null;
     _wvc = null;
     super.dispose();
+  }
+
+  /// Bug fix: Force focus Milkdown editor DOM to make Android WebView
+  /// show the soft keyboard (which it normally refuses for contenteditable).
+  ///
+  /// Called when MdBridge reports `ready` - Milkdown has finished .create().
+  ///
+  /// Safety:
+  ///   - WebView may be disposed, runJavaScript may throw - caught.
+  ///   - In fallback mode, .ProseMirror absent, falls back to textarea.
+  ///   - Cursor placement wrapped in try/catch, skipped on empty doc.
+  Future<void> _focusEditor() async {
+    final wvc = _wvc;
+    if (wvc == null || _disposed) return;
+    try {
+      await wvc.runJavaScript(kFocusEditorScript);
+    } catch (e) {
+      debugPrint('EditorController: focus injection failed: $e');
+    }
   }
 }

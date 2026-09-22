@@ -541,7 +541,7 @@ class _EditorPageState extends State<EditorPage> {
                   )
                 : _LoadError(message: _loadError!),
             bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
-                ? _MarkdownSymbolBar(onPressed: _editor.insertTextAtCursor)
+                ? _MarkdownSymbolBar(onPressed: (action) => _editor.insertTextAtCursor(action.snippet))
                 : null,
           ),
         );
@@ -655,39 +655,48 @@ class _SelectionToolbar extends StatelessWidget {
 class _MarkdownSymbolBar extends StatelessWidget {
   const _MarkdownSymbolBar({required this.onPressed});
 
-  final ValueChanged<String> onPressed;
+  final ValueChanged<_MarkdownSymbolAction> onPressed;
 
-  static const symbols = <String>[
-    '# ',
-    '*',
-    '- ',
-    '1. ',
-    '> ',
-    '[ ]',
-    '![image]()',
+  static const _actions = <_MarkdownSymbolAction>[
+    _MarkdownSymbolAction(Icons.title, '# ', 'toolbar_heading'),
+    _MarkdownSymbolAction(Icons.format_bold, '**', 'toolbar_bold'),
+    _MarkdownSymbolAction(Icons.format_italic, '*', 'toolbar_italic'),
+    _MarkdownSymbolAction(Icons.format_list_bulleted, '- ', 'toolbar_bullet'),
+    _MarkdownSymbolAction(
+        Icons.format_list_numbered, '1. ', 'toolbar_number'),
+    _MarkdownSymbolAction(Icons.format_quote, '> ', 'toolbar_quote'),
+    _MarkdownSymbolAction(Icons.check_box_outline_blank, '[ ]', 'toolbar_task'),
+    _MarkdownSymbolAction(Icons.code, '```\n\n```', 'toolbar_code'),
+    _MarkdownSymbolAction(Icons.image_outlined, '![image]()', 'toolbar_image'),
+    _MarkdownSymbolAction(Icons.link, '[text](url)', 'toolbar_link'),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       top: false,
       child: Material(
-        color: Theme.of(context).colorScheme.surfaceContainer,
+        color: scheme.surfaceContainerHigh,
+        elevation: 1,
         child: SizedBox(
-          height: 48,
-          child: SingleChildScrollView(
+          height: 52,
+          child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Wrap(
-              spacing: 4,
-              children: [
-                for (final symbol in symbols)
-                  TextButton(
-                    onPressed: () => onPressed(symbol),
-                    child: Text(symbol),
-                  ),
-              ],
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            itemCount: _actions.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 2),
+            itemBuilder: (context, index) {
+              final action = _actions[index];
+              return IconButton(
+                tooltip: l.t(action.tooltipKey),
+                icon: Icon(action.icon, size: 20),
+                color: scheme.onSurface,
+                visualDensity: VisualDensity.compact,
+                onPressed: () => onPressed(action),
+              );
+            },
           ),
         ),
       ),
@@ -695,6 +704,13 @@ class _MarkdownSymbolBar extends StatelessWidget {
   }
 }
 
+class _MarkdownSymbolAction {
+  const _MarkdownSymbolAction(this.icon, this.snippet, this.tooltipKey);
+
+  final IconData icon;
+  final String snippet;
+  final String tooltipKey;
+}
 class _LoadError extends StatelessWidget {
   const _LoadError({required this.message});
 

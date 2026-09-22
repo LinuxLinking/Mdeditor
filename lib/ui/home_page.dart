@@ -130,7 +130,7 @@ class _HomePageState extends State<HomePage> {
 
               final files = snapshot.data ?? const [];
               if (files.isEmpty) {
-                return _EmptyRecentState(onNew: _newDoc, onOpen: _openViaSAF);
+                return _EmptyRecentState();
               }
 
               return ListView.separated(
@@ -188,10 +188,9 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _EmptyRecentState extends StatelessWidget {
-  const _EmptyRecentState({required this.onNew, required this.onOpen});
-
-  final VoidCallback onNew;
-  final VoidCallback onOpen;
+  // 主操作入口(新建/打开)统一由 AppBar 提供,
+  // 空态只做引导展示,不再重复按钮。
+  const _EmptyRecentState();
 
   @override
   Widget build(BuildContext context) {
@@ -205,24 +204,7 @@ class _EmptyRecentState extends StatelessWidget {
           title: l.t('no_recent_title'),
           body: l.t('no_recent_body'),
         ),
-        const SizedBox(height: 24),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            FilledButton.icon(
-              onPressed: onNew,
-              icon: const Icon(Icons.note_add),
-              label: Text(l.t('new_doc')),
-            ),
-            OutlinedButton.icon(
-              onPressed: onOpen,
-              icon: const Icon(Icons.folder_open),
-              label: Text(l.t('open')),
-            ),
-          ],
-        ),
+
       ],
     );
   }
