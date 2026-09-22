@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mdeditor launcher icon — foreground layer.
+
+  Composition (108x108dp viewport, 72x72dp safe area centered):
+    1. Three thin text-line bars above the M (subtle, alpha 0.35)
+       — hint at "document content"
+    2. A large stroked "M" in the center — the wordmark
+       — path goes: bottom-left → top-left → middle-bottom valley → top-right → bottom-right
+    3. Three text-line bars below the M (full opacity)
+       — strongest visual cue of "Markdown document"
+
+  Strokes use round caps + round joins so the M renders cleanly at all
+  launcher sizes (xxhdpi → mdpi).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- (1) Subtle text-line cues above the M (alpha 0.35) -->
+    <path android:strokeColor="#FFFFFF" android:strokeAlpha="0.35"
+          android:strokeWidth="3" android:strokeLineCap="round"
+          android:pathData="M28,30 L80,30" />
+    <path android:strokeColor="#FFFFFF" android:strokeAlpha="0.25"
+          android:strokeWidth="3" android:strokeLineCap="round"
+          android:pathData="M28,22 L70,22" />
+
+    <!-- (2) The wordmark M -->
+    <path android:strokeColor="#FFFFFF"
+          android:strokeWidth="9"
+          android:strokeLineCap="round"
+          android:strokeLineJoin="round"
+          android:fillColor="#00000000"
+          android:pathData="M26,82 L26,42 L54,66 L82,42 L82,82" />
+
+    <!-- (3) Text-line cues below the M (full opacity) -->
+    <path android:strokeColor="#FFFFFF"
+          android:strokeWidth="3.5" android:strokeLineCap="round"
+          android:pathData="M26,92 L82,92" />
+    <path android:strokeColor="#FFFFFF" android:strokeAlpha="0.75"
+          android:strokeWidth="3" android:strokeLineCap="round"
+          android:pathData="M28,100 L72,100" />
+</vector>

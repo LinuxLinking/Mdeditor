@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mdeditor launcher icon — background layer.
+  Adaptive icon (API 26+) foreground/background layer dimensions: 108x108dp.
+  Visible (safe) area inside the layer is centered 72x72dp; the launcher may mask
+  the outer 18dp ring, so any "decorative" content should stay inside the safe box.
+  This file owns only the background; the foreground "M" lives in
+  ic_launcher_foreground.xml.
+
+  Palette is aligned with the Flutter ColorScheme.fromSeed(Colors.teal):
+  primary   #009688  (Colors.teal 500)
+  primaryDark #00695C (teal 800) for the outer ring
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Base teal fill -->
+    <path
+        android:fillColor="#009688"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+
+    <!-- Subtle radial highlight (lighter teal in the upper-left) -->
+    <path
+        android:fillColor="#26FFFFFF"
+        android:pathData="M-10,-10 L80,-10 A120,120 0 0,1 -10,80 Z" />
+
+    <!-- Outer ring (teal 800) gives the icon depth on light launchers -->
+    <path
+        android:strokeColor="#00695C"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M4.5,4.5 L103.5,4.5 L103.5,103.5 L4.5,103.5 Z" />
+
+    <!-- Subtle dot grid pattern (low alpha) — adds texture without busyness -->
+    <group>
+        <path android:fillColor="#1AFFFFFF"
+              android:pathData="M22,22 m-1,0 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0" />
+        <path android:fillColor="#1AFFFFFF"
+              android:pathData="M86,22 m-1,0 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0" />
+        <path android:fillColor="#1AFFFFFF"
+              android:pathData="M22,86 m-1,0 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0" />
+        <path android:fillColor="#1AFFFFFF"
+              android:pathData="M86,86 m-1,0 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0" />
+        <path android:fillColor="#14FFFFFF"
+              android:pathData="M54,12 m-1,0 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0" />
+        <path android:fillColor="#14FFFFFF"
+              android:pathData="M54,96 m-1,0 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0" />
+    </group>
+</vector>
