@@ -1,5 +1,6 @@
 import '../../md_ast/ast.dart';
 import 'docx_options.dart';
+import 'code_tokenizer.dart';
 import 'image_source.dart';
 import 'media.dart';
 import 'rels.dart';
@@ -40,11 +41,17 @@ class DocumentXmlBuilder {
         target: 'footer1.xml',
         type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer',
       );
-      sectPr.writeln('<w:headerReference w:type="default" r:id="' + headerRId + '"/>');
-      sectPr.writeln('<w:footerReference w:type="default" r:id="' + footerRId + '"/>');
+      sectPr.writeln(
+        '<w:headerReference w:type="default" r:id="' + headerRId + '"/>',
+      );
+      sectPr.writeln(
+        '<w:footerReference w:type="default" r:id="' + footerRId + '"/>',
+      );
     }
     sectPr.writeln('<w:pgSz w:w="11906" w:h="16838"/>');
-    sectPr.writeln('<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>');
+    sectPr.writeln(
+      '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>',
+    );
     sectPr.writeln('<w:cols w:space="720"/>');
     sectPr.writeln('<w:docGrid w:linePitch="312"/>');
     sectPr.writeln('</w:sectPr>');
@@ -56,7 +63,10 @@ class DocumentXmlBuilder {
         'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ' +
         'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
         'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
-        '<w:body>' + bodyXml + sectPrXml + '</w:body></w:document>';
+        '<w:body>' +
+        bodyXml +
+        sectPrXml +
+        '</w:body></w:document>';
   }
 
   // ─── 块级节点 ──────────────────────────────────────────────
@@ -64,7 +74,11 @@ class DocumentXmlBuilder {
   String _block(MdNode node, {required int ilvl}) {
     switch (node) {
       case Heading(:final level, :final children):
-        return '<w:p><w:pPr><w:pStyle w:val="Heading' + level.toString() + '"/></w:pPr>' + _inlines(children) + '</w:p>';
+        return '<w:p><w:pPr><w:pStyle w:val="Heading' +
+            level.toString() +
+            '"/></w:pPr>' +
+            _inlines(children) +
+            '</w:p>';
       case Paragraph(:final children):
         return '<w:p>' + _inlines(children) + '</w:p>';
       case BulletList(:final items):
@@ -79,9 +93,17 @@ class DocumentXmlBuilder {
         final buf = StringBuffer();
         for (final c in children) {
           if (c is Paragraph) {
-            buf.write('<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr>' + _inlines(c.children) + '</w:p>');
+            buf.write(
+              '<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr>' +
+                  _inlines(c.children) +
+                  '</w:p>',
+            );
           } else if (c is Heading) {
-            buf.write('<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr>' + _inlines(c.children) + '</w:p>');
+            buf.write(
+              '<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr>' +
+                  _inlines(c.children) +
+                  '</w:p>',
+            );
           } else {
             buf.write(_block(c, ilvl: 0));
           }
@@ -107,11 +129,19 @@ class DocumentXmlBuilder {
     if (source == null) {
       final altText = alt ?? '';
       return '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
-          '<w:r><w:rPr><w:i/><w:color w:val="666666"/></w:rPr>'
-          '<w:t xml:space="preserve">[图片: ' + _esc(altText) + '] (' + _esc(src) + ')</w:t>'
-          '</w:r></w:p>';
+              '<w:r><w:rPr><w:i/><w:color w:val="666666"/></w:rPr>'
+              '<w:t xml:space="preserve">[图片: ' +
+          _esc(altText) +
+          '] (' +
+          _esc(src) +
+          ')</w:t>'
+              '</w:r></w:p>';
     }
-    final filename = mediaCollector.register(src, source.bytes, ext: source.ext);
+    final filename = mediaCollector.register(
+      src,
+      source.bytes,
+      ext: source.ext,
+    );
     final rId = relsCollector.register(
       target: 'media/' + filename,
       type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
@@ -119,29 +149,39 @@ class DocumentXmlBuilder {
     const cx = 200 * 12700;
     const cy = 150 * 12700;
     return '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r>'
-        '<w:drawing>'
-        '<wp:inline distT="0" distB="0" distL="0" distR="0">'
-        '<wp:extent cx="' + cx.toString() + '" cy="' + cy.toString() + '"/>'
-        '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
-        '<wp:docPr id="0" name="Picture"/>'
-        '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
-        '<a:graphic>'
-        '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
-        '<pic:pic>'
-        '<pic:nvPicPr><pic:cNvPr id="0" name=""/><pic:cNvPicPr/></pic:nvPicPr>'
-        '<pic:blipFill>'
-        '<a:blip r:embed="' + rId + '"/>'
-        '<a:stretch><a:fillRect/></a:stretch>'
-        '</pic:blipFill>'
-        '<pic:spPr>'
-        '<a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx.toString() + '" cy="' + cy.toString() + '"/></a:xfrm>'
-        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
-        '</pic:spPr>'
-        '</pic:pic>'
-        '</a:graphicData>'
-        '</a:graphic>'
-        '</wp:inline>'
-        '</w:drawing></w:r></w:p>';
+            '<w:drawing>'
+            '<wp:inline distT="0" distB="0" distL="0" distR="0">'
+            '<wp:extent cx="' +
+        cx.toString() +
+        '" cy="' +
+        cy.toString() +
+        '"/>'
+            '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+            '<wp:docPr id="0" name="Picture"/>'
+            '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+            '<a:graphic>'
+            '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            '<pic:pic>'
+            '<pic:nvPicPr><pic:cNvPr id="0" name=""/><pic:cNvPicPr/></pic:nvPicPr>'
+            '<pic:blipFill>'
+            '<a:blip r:embed="' +
+        rId +
+        '"/>'
+            '<a:stretch><a:fillRect/></a:stretch>'
+            '</pic:blipFill>'
+            '<pic:spPr>'
+            '<a:xfrm><a:off x="0" y="0"/><a:ext cx="' +
+        cx.toString() +
+        '" cy="' +
+        cy.toString() +
+        '"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+            '</pic:spPr>'
+            '</pic:pic>'
+            '</a:graphicData>'
+            '</a:graphic>'
+            '</wp:inline>'
+            '</w:drawing></w:r></w:p>';
   }
 
   String _taskItem(TaskListItem item) {
@@ -149,9 +189,14 @@ class DocumentXmlBuilder {
     final buf = StringBuffer();
     for (final child in item.children) {
       if (child is Paragraph) {
-        buf.write('<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="720"/></w:pPr>'
-            '<w:r><w:t xml:space="preserve">' + mark + ' </w:t></w:r>'
-            + _inlines(child.children) + '</w:p>');
+        buf.write(
+          '<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="720"/></w:pPr>'
+                  '<w:r><w:t xml:space="preserve">' +
+              mark +
+              ' </w:t></w:r>' +
+              _inlines(child.children) +
+              '</w:p>',
+        );
       } else {
         buf.write(_block(child, ilvl: 0));
       }
@@ -167,9 +212,17 @@ class DocumentXmlBuilder {
       } else if (child is OrderedList) {
         buf.write(_block(child, ilvl: ilvl + 1));
       } else if (child is Paragraph) {
-        buf.write('<w:p><w:pPr><w:pStyle w:val="ListParagraph"/>'
-            '<w:numPr><w:ilvl w:val="' + ilvl.toString() + '"/><w:numId w:val="' + numId.toString() + '"/></w:numPr>'
-            '</w:pPr>' + _inlines(child.children) + '</w:p>');
+        buf.write(
+          '<w:p><w:pPr><w:pStyle w:val="ListParagraph"/>'
+                  '<w:numPr><w:ilvl w:val="' +
+              ilvl.toString() +
+              '"/><w:numId w:val="' +
+              numId.toString() +
+              '"/></w:numPr>'
+                  '</w:pPr>' +
+              _inlines(child.children) +
+              '</w:p>',
+        );
       } else {
         buf.write(_block(child, ilvl: ilvl));
       }
@@ -182,13 +235,36 @@ class DocumentXmlBuilder {
     final buf = StringBuffer();
     for (final line in lines) {
       if (line.isEmpty) continue;
-      buf.write('<w:p><w:pPr><w:pStyle w:val="SourceCode"/>'
-          '<w:shd w:val="clear" w:color="auto" w:fill="F5F5F5"/>'
-          '</w:pPr>'
-          '<w:r><w:t xml:space="preserve">' + _esc(line) + '</w:t></w:r></w:p>');
+      buf.write(
+        '<w:p><w:pPr><w:pStyle w:val="SourceCode"/>'
+        '<w:shd w:val="clear" w:color="auto" w:fill="F5F5F5"/>'
+        '</w:pPr>',
+      );
+      for (final token in CodeTokenizer.tokenize(language ?? '', line)) {
+        if (token.text.isEmpty) continue;
+        final color = _tokenColor(token.kind);
+        buf.write(
+          '<w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" '
+          'w:eastAsia="Consolas" w:cs="Consolas"/>',
+        );
+        if (color != null) buf.write('<w:color w:val="$color"/>');
+        buf.write(
+          '</w:rPr><w:t xml:space="preserve">${_esc(token.text)}</w:t></w:r>',
+        );
+      }
+      buf.write('</w:p>');
     }
     return buf.toString();
   }
+
+  String? _tokenColor(CodeTokenKind kind) => switch (kind) {
+    CodeTokenKind.plain => null,
+    CodeTokenKind.keyword => 'CF222E',
+    CodeTokenKind.string => '0A3069',
+    CodeTokenKind.number => '0550AE',
+    CodeTokenKind.comment => '6E7781',
+    CodeTokenKind.function => '8250DF',
+  };
 
   String _table(List<List<List<Inline>>> rows, List<int> alignments) {
     if (rows.isEmpty) return '';
@@ -219,10 +295,21 @@ class DocumentXmlBuilder {
         final align = c < alignments.length ? alignments[c] : -1;
         final jc = align == 0 ? 'center' : (align == 1 ? 'right' : 'left');
         final pStyle = isHeader ? '<w:pStyle w:val="Heading6"/>' : '';
-        buf.writeln('    <w:tc>'
-            '<w:tcPr><w:tcW w:w="' + colWidth + '" w:type="dxa"/><w:jc w:val="' + jc + '"/></w:tcPr>'
-            '<w:p><w:pPr><w:jc w:val="' + jc + '"/>' + pStyle + '</w:pPr>'
-            + _inlines(rows[r][c]) + '</w:p></w:tc>');
+        buf.writeln(
+          '    <w:tc>'
+                  '<w:tcPr><w:tcW w:w="' +
+              colWidth +
+              '" w:type="dxa"/><w:jc w:val="' +
+              jc +
+              '"/></w:tcPr>'
+                  '<w:p><w:pPr><w:jc w:val="' +
+              jc +
+              '"/>' +
+              pStyle +
+              '</w:pPr>' +
+              _inlines(rows[r][c]) +
+              '</w:p></w:tc>',
+        );
       }
       buf.writeln('  </w:tr>');
     }
@@ -287,7 +374,11 @@ class DocumentXmlBuilder {
     if (rprXml.isEmpty) {
       return '<w:r><w:t xml:space="preserve">' + escapedText + '</w:t></w:r>';
     }
-    return '<w:r><w:rPr>' + rprXml + '</w:rPr><w:t xml:space="preserve">' + escapedText + '</w:t></w:r>';
+    return '<w:r><w:rPr>' +
+        rprXml +
+        '</w:rPr><w:t xml:space="preserve">' +
+        escapedText +
+        '</w:t></w:r>';
   }
 
   String _esc(String s) => s
@@ -317,11 +408,41 @@ class _Rpr {
     this.hyperlink = false,
   });
 
-  _Rpr withItalic() => _Rpr(italic: true, bold: bold, mono: mono, shading: shading, hyperlink: hyperlink);
-  _Rpr withBold() => _Rpr(italic: italic, bold: true, mono: mono, shading: shading, hyperlink: hyperlink);
-  _Rpr withMono() => _Rpr(italic: italic, bold: bold, mono: true, shading: shading, hyperlink: hyperlink);
-  _Rpr withShading() => _Rpr(italic: italic, bold: bold, mono: mono, shading: true, hyperlink: hyperlink);
-  _Rpr withHyperlink() => _Rpr(italic: italic, bold: bold, mono: mono, shading: shading, hyperlink: true);
+  _Rpr withItalic() => _Rpr(
+    italic: true,
+    bold: bold,
+    mono: mono,
+    shading: shading,
+    hyperlink: hyperlink,
+  );
+  _Rpr withBold() => _Rpr(
+    italic: italic,
+    bold: true,
+    mono: mono,
+    shading: shading,
+    hyperlink: hyperlink,
+  );
+  _Rpr withMono() => _Rpr(
+    italic: italic,
+    bold: bold,
+    mono: true,
+    shading: shading,
+    hyperlink: hyperlink,
+  );
+  _Rpr withShading() => _Rpr(
+    italic: italic,
+    bold: bold,
+    mono: mono,
+    shading: true,
+    hyperlink: hyperlink,
+  );
+  _Rpr withHyperlink() => _Rpr(
+    italic: italic,
+    bold: bold,
+    mono: mono,
+    shading: shading,
+    hyperlink: true,
+  );
 
   bool get isEmpty => !(italic || bold || mono || shading || hyperlink);
 
@@ -329,10 +450,20 @@ class _Rpr {
     if (isEmpty) return '';
     final buf = StringBuffer();
     if (hyperlink) buf.write('<w:rStyle w:val="Hyperlink"/>');
-    if (mono) buf.write('<w:rFonts w:ascii="' + monoFont + '" w:hAnsi="' + monoFont + '" w:cs="' + monoFont + '"/>');
+    if (mono)
+      buf.write(
+        '<w:rFonts w:ascii="' +
+            monoFont +
+            '" w:hAnsi="' +
+            monoFont +
+            '" w:cs="' +
+            monoFont +
+            '"/>',
+      );
     if (bold) buf.write('<w:b/>');
     if (italic) buf.write('<w:i/>');
-    if (shading) buf.write('<w:shd w:val="clear" w:color="auto" w:fill="F0F0F0"/>');
+    if (shading)
+      buf.write('<w:shd w:val="clear" w:color="auto" w:fill="F0F0F0"/>');
     return buf.toString();
   }
 }

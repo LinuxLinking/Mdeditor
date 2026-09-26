@@ -45,6 +45,9 @@ enum EditorMode { wysiwyg, source }
 ///   4. JS �?Milkdown 初始化完�?�?`MdBridge.postMessage({type:'ready'})`
 ///   5. 用户编辑 �?`MdBridge.postMessage({type:'changed', md})` �?[onContentChanged]
 class EditorController extends ChangeNotifier {
+  EditorController({NativeEditorTheme? initialTheme})
+    : _nativeTheme = initialTheme;
+
   WebViewController? _wvc;
 
   /// Milkdown 是否已完成 init（收到 `ready` 消息）。
@@ -53,6 +56,7 @@ class EditorController extends ChangeNotifier {
   String _lastContent = '';
   EditorSelection? _selection;
   NativeEditorTheme? _nativeTheme;
+  DateTime? _lastCopiedAt;
   int _renderGeneration = 0;
   Timer? _renderDebounce;
   bool _renderInFlight = false;
@@ -70,21 +74,65 @@ class EditorController extends ChangeNotifier {
   void bindWebView(WebViewController wvc) {
     _wvc = wvc
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: _onPageFinished,
-        onWebResourceError: (error) {
-          debugPrint('EditorController: WebView error: ${error.description} (${error.errorType})');
-        },
-      ))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: _onPageFinished,
+          onWebResourceError: (error) {
+            debugPrint(
+              'EditorController: WebView error: ${error.description} (${error.errorType})',
+            );
+          },
+        ),
+      )
       ..addJavaScriptChannel('MdBridge', onMessageReceived: _onBridgeMessage)
       ..setOnConsoleMessage((message) {
-        debugPrint('EditorController: JS console [${message.level}]: ${message.message}');
+        debugPrint(
+          'EditorController: JS console [${message.level}]: ${message.message}',
+        );
       });
   }
 
   /// 初始内容（在 WebView 加载完成、init() 调用前由 EditorPage 设置）。
   String? pendingInitialContent;
-  String theme = 'light';
+
+  static String buildInitScript({
+    required String markdown,
+    required Map<String, Object> theme,
+  }) {
+    return 'if (window.bridge && window.bridge.init) {'
+        'window.bridge.init({'
+        'initialContent: ${_jsStringLiteral(markdown)}, '
+        'theme: JSON.parse(${_jsStringLiteral(jsonEncode(theme))})'
+        '});'
+        '}';
+  }
+
+  static String buildInitScriptWithFallback({
+    required String markdown,
+    required Map<String, Object> theme,
+  }) =>
+      '${buildInitScript(markdown: markdown, theme: theme)} else {'
+      'var r=document.getElementById("app");'
+      'if(r){r.innerHTML="";var t=document.createElement("textarea");'
+      't.value=${_jsStringLiteral(markdown)};t.style.cssText="width:100%;height:100%;padding:18px;";'
+      'r.appendChild(t);'
+      't.addEventListener("input",function(){window.MdBridge&&window.MdBridge.postMessage(JSON.stringify({type:"changed",md:t.value}));});'
+      'window.bridge={getContent:function(){return t.value;},getHTML:function(){return "<pre>"+t.value+"</pre>";},setContent:function(v){t.value=v;},setMode:function(){},setTheme:function(){}};'
+      'window.MdBridge&&window.MdBridge.postMessage(JSON.stringify({type:"ready"}));}'
+      '}';
+
+  Future<String> getContentForSave() async {
+    if (!_isReady) throw StateError('Editor is not ready');
+    return getContent();
+  }
+
+  static NativeEditorTheme _defaultEditorTheme() => const NativeEditorTheme(
+    name: 'github-light',
+    variables: <String, String>{
+      '--editor-bg': '#ffffff',
+      '--editor-fg': '#24292f',
+    },
+  );
 
   /// Bug fix: Soft keyboard does not appear when entering the editor.
   ///
@@ -98,13 +146,14 @@ class EditorController extends ChangeNotifier {
   ///   1. `.ProseMirror` (Milkdown contenteditable container)
   ///   2. any `[contenteditable="true"]`
   ///   3. `<textarea>` (fallback when Milkdown fails)
-  static const String kFocusEditorScript = '(function(){var e=document.querySelector(".ProseMirror")||document.querySelector("[contenteditable="true"]")||document.querySelector("textarea");if(e&&e.focus){e.focus();try{var s=window.getSelection();if(s&&e.firstChild){var r=document.createRange();r.setStart(e.firstChild,0);r.collapse(true);s.removeAllRanges();s.addRange(r);}}catch(_){}}})()';
+  static const String kFocusEditorScript =
+      '(function(){var e=document.querySelector(".ProseMirror")||document.querySelector("[contenteditable=\\"true\\"]")||document.querySelector("textarea");if(e&&e.focus){e.focus();try{var s=window.getSelection();if(s&&e.firstChild){var r=document.createRange();r.setStart(e.firstChild,0);r.collapse(true);s.removeAllRanges();s.addRange(r);}}catch(_){}}})()';
 
   /// 生成只含 ASCII 的 JS 字符串字面量。
   /// 所有非 ASCII 字符转义为 `\uXXXX`，避免 Android WebView 在
   /// MethodChannel/evaluateJavascript 链路中发生编码差异。
   /// helper 同样处理 JSON 特殊字符（引号、反斜杠、控制字符）。
-  String _jsStringLiteral(String s) {
+  static String _jsStringLiteral(String s) {
     // 1) 先用 jsonEncode 处理引号/反斜�?控制字符(输出含中文字�?
     final json = jsonEncode(s);
     // 2) 把所有非 ASCII 码点�?\uXXXX,确保最终字面量�?ASCII
@@ -125,21 +174,8 @@ class EditorController extends ChangeNotifier {
   /// WebView 页面加载完成时回调，调用 `window.bridge.init` 启动 Milkdown。
   void _onPageFinished(String url) {
     final md = pendingInitialContent ?? '';
-    final js = 'if (window.bridge && window.bridge.init) {'
-        'window.bridge.init({'
-        'initialContent: ${_jsStringLiteral(md)}, '
-        'theme: ${_jsStringLiteral(theme)}'
-        '});'
-        '} else {'
-        // This branch handles a script parse/load failure in the WebView.
-        'var r=document.getElementById("app");'
-        'if(r){r.innerHTML="";var t=document.createElement("textarea");'
-        't.value=${_jsStringLiteral(md)};t.style.cssText="width:100%;height:100%;padding:18px;";'
-        'r.appendChild(t);'
-        't.addEventListener("input",function(){window.MdBridge&&window.MdBridge.postMessage(JSON.stringify({type:"changed",md:t.value}));});'
-        'window.bridge={getContent:function(){return t.value;},getHTML:function(){return "<pre>"+t.value+"</pre>";},setContent:function(v){t.value=v;},setMode:function(){},setTheme:function(){}};'
-        'window.MdBridge&&window.MdBridge.postMessage(JSON.stringify({type:"ready"}));}'
-        '}';
+    final theme = (_nativeTheme ?? _defaultEditorTheme()).toMap();
+    final js = buildInitScriptWithFallback(markdown: md, theme: theme);
     _wvc?.runJavaScript(js);
   }
 
@@ -150,7 +186,9 @@ class EditorController extends ChangeNotifier {
       final payload = data['payload'] is Map
           ? (data['payload'] as Map).cast<String, dynamic>()
           : const <String, dynamic>{};
-      debugPrint('EditorController: received bridge message type=${data['type']}');
+      debugPrint(
+        'EditorController: received bridge message type=${data['type']}',
+      );
       switch (data['type']) {
         case 'ready':
           debugPrint('EditorController: Milkdown ready!');
@@ -187,10 +225,14 @@ class EditorController extends ChangeNotifier {
             text: selectionData['text'] as String? ?? '',
             start: (selectionData['start'] as num?)?.toInt() ?? 0,
             end: (selectionData['end'] as num?)?.toInt() ?? 0,
-            left: (selectionData['left'] as num?)?.toDouble() ??
-                (selectionData['x'] as num?)?.toDouble() ?? 0,
-            top: (selectionData['top'] as num?)?.toDouble() ??
-                (selectionData['y'] as num?)?.toDouble() ?? 0,
+            left:
+                (selectionData['left'] as num?)?.toDouble() ??
+                (selectionData['x'] as num?)?.toDouble() ??
+                0,
+            top:
+                (selectionData['top'] as num?)?.toDouble() ??
+                (selectionData['y'] as num?)?.toDouble() ??
+                0,
             width: (selectionData['width'] as num?)?.toDouble() ?? 0,
             height: (selectionData['height'] as num?)?.toDouble() ?? 0,
           );
@@ -201,13 +243,25 @@ class EditorController extends ChangeNotifier {
           final request = data['payload'] is Map
               ? (data['payload'] as Map).cast<String, dynamic>()
               : data;
-          unawaited(_renderRequestedMermaid(
-            request['source'] as String? ?? '',
-            request['hash'] as String? ?? '',
-          ));
+          unawaited(
+            _renderRequestedMermaid(
+              request['source'] as String? ?? '',
+              request['hash'] as String? ?? '',
+            ),
+          );
           break;
         case 'codeCopy':
-          unawaited(NativeRenderChannel.copyText(payload['text'] as String? ?? ''));
+          unawaited(
+            NativeRenderChannel.copyText(payload['text'] as String? ?? ''),
+          );
+          _lastCopiedAt = DateTime.now();
+          notifyListeners();
+          break;
+        case 'codeCopied':
+          // Phase 7b:复制反馈事件,JS 端已完成 DOM 反馈(按钮变 ✓)
+          // 这里仅更新时间戳供 status_bar 使用
+          _lastCopiedAt = DateTime.now();
+          notifyListeners();
           break;
         case 'error':
           // TODO Phase 1+: 上报错误(SnackBar / 日志)
@@ -263,7 +317,7 @@ class EditorController extends ChangeNotifier {
     // cached lookup is available for callers that already know the hash.
     final svg = hash.isNotEmpty
         ? await NativeRenderChannel.getCachedMermaid(hash) ??
-            await NativeRenderChannel.renderMermaid(source)
+              await NativeRenderChannel.renderMermaid(source)
         : await NativeRenderChannel.renderMermaid(source);
     if (svg == null || _wvc == null || _disposed) return;
     try {
@@ -280,18 +334,41 @@ class EditorController extends ChangeNotifier {
     _nativeTheme = theme;
     await NativeRenderChannel.setTheme(theme);
     if (_wvc == null || _disposed) return;
+    // Phase 7b: 推送完整 EditorTheme (含 codeHighlight / codeBadgeMap / codeFonts)
+    // 给 bridge.setTheme 触发 Milkdown 全量重渲染 + 高亮样式切换
     try {
+      final fullThemeJson = jsonEncode({
+        'name': theme.name,
+        'variables': theme.variables,
+        'codeBadgeMap': theme.codeBadgeMap,
+        'codeFonts': theme.codeFonts,
+        'codeHighlight': theme.codeHighlight
+            .map(
+              (h) => {
+                'tag': h.tag,
+                'color': h.color,
+                if (h.fontStyle != null) 'fontStyle': h.fontStyle,
+                if (h.fontWeight != null) 'fontWeight': h.fontWeight,
+              },
+            )
+            .toList(),
+      });
       await _wvc!.runJavaScript(
-        'window.bridge && window.bridge.setTheme && window.bridge.setTheme('
-        '${_jsObjectLiteral(theme.variables)});'
-        'window.nativeFeatures && window.nativeFeatures.setTheme('
-        '${_jsObjectLiteral(theme.variables)})',
+        'window.bridge && window.bridge.setTheme && window.bridge.setTheme(JSON.parse(' +
+            _asciiEscapeJson(fullThemeJson) +
+            '))',
       );
     } catch (e) {
       debugPrint('EditorController: setTheme JS error: $e');
     }
     if (_lastContent.isNotEmpty) _scheduleNativeRender(_lastContent);
   }
+
+  /// 最近一次代码块复制时间,供 status_bar 使用
+  DateTime? get lastCopiedAt => _lastCopiedAt;
+
+  /// 当前文档内容(由 JS bridge "changed" 消息同步)。
+  String get content => _lastContent;
 
   Future<void> insertSymbol(String symbol) async {
     if (_wvc == null || !_isReady || _disposed) return;
@@ -321,13 +398,9 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _jsObjectLiteral(Map<String, String> value) {
-    return _asciiEscapeJson(jsonEncode(value));
-  }
-
   /// 将 JSON 字符串中的所有非 ASCII 字符转义为 `\uXXXX`，逐 code unit 处理，
   /// 正确代理对（emoji 等补充平面字符）。
-  String _asciiEscapeJson(String json) {
+  static String _asciiEscapeJson(String json) {
     final buf = StringBuffer();
     for (int i = 0; i < json.length; i++) {
       final c = json.codeUnitAt(i);
@@ -343,7 +416,10 @@ class EditorController extends ChangeNotifier {
   void _scheduleNativeRender(String markdown) {
     _pendingNativeMarkdown = markdown;
     _renderDebounce?.cancel();
-    _renderDebounce = Timer(const Duration(milliseconds: 32), _drainNativeRender);
+    _renderDebounce = Timer(
+      const Duration(milliseconds: 32),
+      _drainNativeRender,
+    );
   }
 
   Future<void> _drainNativeRender() async {
@@ -375,8 +451,14 @@ class EditorController extends ChangeNotifier {
       markdown: markdown,
       theme: theme,
     );
-    if (result == null || generation != _renderGeneration || _wvc == null || _disposed) return;
-    final patches = result.patches.map((patch) => patch.toMap()).toList(growable: false);
+    if (result == null ||
+        generation != _renderGeneration ||
+        _wvc == null ||
+        _disposed)
+      return;
+    final patches = result.patches
+        .map((patch) => patch.toMap())
+        .toList(growable: false);
     try {
       await _wvc!.runJavaScript(
         'window.nativeFeatures && window.nativeFeatures.applyPatches('
@@ -435,7 +517,11 @@ class EditorController extends ChangeNotifier {
     required String extraArgument,
   }) async {
     final html = await render();
-    if (html == null || generation != _renderGeneration || _wvc == null || _disposed) return;
+    if (html == null ||
+        generation != _renderGeneration ||
+        _wvc == null ||
+        _disposed)
+      return;
     try {
       await _wvc!.runJavaScript(
         'window.nativeFeatures && window.nativeFeatures.$javascriptMethod('

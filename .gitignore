@@ -23,11 +23,6 @@ android/.kotlin/
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id
@@ -45,7 +40,7 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android Studio build artifacts
 /android/app/debug
 /android/app/profile
 /android/app/release
@@ -53,16 +48,37 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# Temp assets & workbuddy
-.tmp_assets/
-.workbuddy/
-
 # Node modules
 node_modules/
 
-# Markdown files (except README)
+# Public repository policy: only public README files are source-controlled Markdown.
 *.md
 !README.md
 !README.en.md
 !README.ja.md
 !README.fr.md
+
+# Tests and internal test evidence
+/test/
+/android/app/src/test/
+/android/render-core/src/test/
+/test_programs/
+
+# Internal development documentation and agent state
+/docs/
+/AGENTS.md
+/CLAUDE.md
+/待办.md
+/tool/README.md
+
+# Local tooling, session artifacts, and temporary output
+/.superpowers/
+/scratch/
+/.workbuddy/
+/.tmp_assets/
+
+# Machine-specific configuration and signing material
+android/local.properties
+android/key.properties
+**/*.jks
+**/*.keystore

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../design/tokens.dart';
 import '../editor/editor_controller.dart';
 import '../export/docx_export/docx_isolate.dart';
 import '../export/docx_export/docx_options.dart';
@@ -16,10 +17,11 @@ import '../file_io/saf_channel.dart';
 import '../l10n/app_localizations.dart';
 import '../native/native_render_channel.dart';
 import '../utils/error_handler.dart';
+import 'widgets/status_bar.dart';
 import 'docx_export_dialog.dart';
 import 'settings/theme_controller.dart';
 
-enum _EditorCommand { exportPdf, exportDocx, exportHtml, saveAs }
+enum _EditorCommand { exportPdf, exportDocx, exportHtml, saveAs, switchSource }
 
 class EditorPage extends StatefulWidget {
   const EditorPage({super.key, this.initialUri, required this.initialName});
@@ -40,14 +42,19 @@ class _EditorPageState extends State<EditorPage> {
   late String _name;
 
   Timer? _autoSaveTimer;
+  DateTime? _lastSavedAt;
   String? _loadError;
+  bool _initialLoadComplete = false;
   bool _allowPop = false;
   EditorThemePreference? _appliedTheme;
+  EditorMode _editorMode = EditorMode.wysiwyg;
 
   @override
   void initState() {
     super.initState();
-    _editor = EditorController();
+    _editor = EditorController(
+      initialTheme: context.read<ThemeController>().nativeTheme,
+    );
     _uri = widget.initialUri;
     _name = widget.initialName;
     _wvc = WebViewController();
@@ -78,6 +85,7 @@ class _EditorPageState extends State<EditorPage> {
   Future<void> _loadInitial() async {
     if (_uri == null) {
       _editor.pendingInitialContent = '';
+      _initialLoadComplete = true;
       return;
     }
 
@@ -93,10 +101,12 @@ class _EditorPageState extends State<EditorPage> {
       if (_editor.isReady) {
         await _editor.loadContent(text);
       }
+      _initialLoadComplete = true;
       if (!mounted) return;
       setState(() => _name = realName);
     } catch (e, s) {
       _loadError = e.toString();
+      _initialLoadComplete = true;
       if (!mounted) return;
       ErrorHandler.reportToUser(context, e, stack: s);
       setState(() {});
@@ -115,12 +125,19 @@ class _EditorPageState extends State<EditorPage> {
 
   Future<void> _autoSave() async {
     final uri = _uri;
-    if (uri == null || !_editor.isDirty || !_editor.isReady) return;
+    if (uri == null ||
+        !_editor.isDirty ||
+        !_editor.isReady ||
+        !_initialLoadComplete ||
+        _loadError != null) {
+      return;
+    }
 
     try {
       final md = await _editor.getContent();
       await FileService.instance.writeText(uri, md);
       _editor.markSaved();
+      if (mounted) setState(() => _lastSavedAt = DateTime.now());
       debugPrint('Autosaved: $_name');
     } catch (e, s) {
       ErrorHandler.report(e, s);
@@ -128,6 +145,10 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   Future<void> _save() async {
+    final l = AppLocalizations.of(context);
+    if (!_ensureEditorReady(l) || !_initialLoadComplete || _loadError != null) {
+      return;
+    }
     final uri = _uri;
     if (uri == null) {
       await _saveAs();
@@ -138,6 +159,7 @@ class _EditorPageState extends State<EditorPage> {
       final md = await _editor.getContent();
       await FileService.instance.writeText(uri, md);
       _editor.markSaved();
+      if (mounted) setState(() => _lastSavedAt = DateTime.now());
       if (!mounted) return;
       _showMessage(
         AppLocalizations.of(context).format('saved_file', {'name': _name}),
@@ -151,6 +173,20 @@ class _EditorPageState extends State<EditorPage> {
 
   Future<void> _saveAs() async {
     final l = AppLocalizations.of(context);
+    if (!_ensureEditorReady(l) || !_initialLoadComplete || _loadError != null) {
+      return;
+    }
+
+    late final String md;
+    try {
+      md = await _editor.getContentForSave();
+    } catch (e, s) {
+      if (!mounted) return;
+      ErrorHandler.report(e, s);
+      _showMessage('${l.t('save_as_failed')}: $e');
+      return;
+    }
+
     final uri = await FileService.instance.pickSaveLocation(
       suggestedName: _markdownFileName(_name),
       mime: 'text/markdown',
@@ -158,7 +194,6 @@ class _EditorPageState extends State<EditorPage> {
     if (uri == null) return;
 
     try {
-      final md = await _editor.getContent();
       await FileService.instance.writeText(uri, md);
       final name = await _displayNameFor(
         uri,
@@ -433,7 +468,19 @@ class _EditorPageState extends State<EditorPage> {
       case _EditorCommand.saveAs:
         unawaited(_saveAs());
         break;
+      case _EditorCommand.switchSource:
+        unawaited(_switchSourceMode());
+        break;
     }
+  }
+
+  Future<void> _switchSourceMode() async {
+    final l = AppLocalizations.of(context);
+    final current = _editorMode;
+    final next = current == EditorMode.wysiwyg ? EditorMode.source : EditorMode.wysiwyg;
+    await _editor.setMode(next);
+    setState(() => _editorMode = next);
+    _showMessage(next == EditorMode.source ? l.t('source_mode') : l.t('wysiwyg_mode'));
   }
 
   @override
@@ -475,6 +522,15 @@ class _EditorPageState extends State<EditorPage> {
                   tooltip: l.t('save'),
                   icon: const Icon(Icons.save),
                   onPressed: _save,
+                ),
+                IconButton(
+                  tooltip: _editorMode == EditorMode.wysiwyg
+                      ? l.t('source_mode')
+                      : l.t('wysiwyg_mode'),
+                  icon: Icon(_editorMode == EditorMode.wysiwyg
+                      ? Icons.code
+                      : Icons.edit),
+                  onPressed: () => _runCommand(_EditorCommand.switchSource),
                 ),
                 PopupMenuButton<_EditorCommand>(
                   tooltip: l.t('more'),
@@ -540,9 +596,21 @@ class _EditorPageState extends State<EditorPage> {
                     ),
                   )
                 : _LoadError(message: _loadError!),
-            bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
-                ? _MarkdownSymbolBar(onPressed: (action) => _editor.insertTextAtCursor(action.snippet))
-                : null,
+            bottomNavigationBar: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (MediaQuery.viewInsetsOf(context).bottom > 0)
+                  _MarkdownSymbolBar(
+                    onPressed: (action) =>
+                        _editor.insertTextAtCursor(action.snippet),
+                  ),
+                StatusBar(
+                  controller: _editor,
+                  fileName: _name,
+                  lastSavedAt: _lastSavedAt,
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -559,7 +627,7 @@ class _EditorPageState extends State<EditorPage> {
       child: Row(
         children: [
           Icon(icon),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.md),
           Flexible(child: Text(label)),
         ],
       ),
@@ -617,7 +685,7 @@ class _SelectionToolbar extends StatelessWidget {
       child: Material(
         elevation: 4,
         color: Theme.of(context).colorScheme.inverseSurface,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
@@ -662,8 +730,7 @@ class _MarkdownSymbolBar extends StatelessWidget {
     _MarkdownSymbolAction(Icons.format_bold, '**', 'toolbar_bold'),
     _MarkdownSymbolAction(Icons.format_italic, '*', 'toolbar_italic'),
     _MarkdownSymbolAction(Icons.format_list_bulleted, '- ', 'toolbar_bullet'),
-    _MarkdownSymbolAction(
-        Icons.format_list_numbered, '1. ', 'toolbar_number'),
+    _MarkdownSymbolAction(Icons.format_list_numbered, '1. ', 'toolbar_number'),
     _MarkdownSymbolAction(Icons.format_quote, '> ', 'toolbar_quote'),
     _MarkdownSymbolAction(Icons.check_box_outline_blank, '[ ]', 'toolbar_task'),
     _MarkdownSymbolAction(Icons.code, '```\n\n```', 'toolbar_code'),
@@ -684,9 +751,12 @@ class _MarkdownSymbolBar extends StatelessWidget {
           height: 52,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm - 2,
+              vertical: AppSpacing.xs,
+            ),
             itemCount: _actions.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 2),
+            separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.xxs),
             itemBuilder: (context, index) {
               final action = _actions[index];
               return IconButton(
@@ -711,6 +781,7 @@ class _MarkdownSymbolAction {
   final String snippet;
   final String tooltipKey;
 }
+
 class _LoadError extends StatelessWidget {
   const _LoadError({required this.message});
 
@@ -721,21 +792,21 @@ class _LoadError extends StatelessWidget {
     final l = AppLocalizations.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.error_outline,
-              size: 56,
+              size: AppIconSize.hero,
               color: Theme.of(context).colorScheme.error,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             Text(
               l.t('load_failed'),
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               message,
               textAlign: TextAlign.center,

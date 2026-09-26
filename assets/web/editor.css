@@ -20,6 +20,18 @@ html.theme-transitioning .native-code-block {
   --editor-selection: rgba(0, 121, 107, 0.18);
   --editor-code-bg: #f0f4f2;
   --editor-accent: #00897b;
+
+  /* Phase 7b 代码块相关变量,主题切换时由 main.ts 注入 */
+  --code-line-number: #8c959f;
+  --code-line-active: #24292f;
+  --code-toolbar-bg: #eff2f5;
+  --code-toolbar-fg: #57606a;
+  --code-fold-icon: #8c959f;
+  --code-copy-success: #1a7f37;
+  --code-badge-fg: #ffffff;
+  --code-badge-default: #6b7280;
+  --code-font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas,
+    'PingFang SC', 'Microsoft YaHei', monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -28,6 +40,9 @@ html.theme-transitioning .native-code-block {
     --editor-fg: #e3ebe7;
     --editor-muted: #aab8b2;
     --editor-selection: rgba(128, 203, 196, 0.24);
+    --editor-code-bg: #1c2128;
+    --code-toolbar-bg: #1c2128;
+    --code-toolbar-fg: #8b949e;
   }
 }
 
@@ -66,7 +81,7 @@ textarea {
   background: transparent;
   color: inherit;
   caret-color: var(--editor-accent);
-  font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  font-family: var(--code-font-family);
   font-size: 15px;
   line-height: 1.65;
 }
@@ -75,34 +90,379 @@ textarea::placeholder {
   color: var(--editor-muted);
 }
 
+/* ===================== 代码块 toolbar / 行号 / 徽章 / 折叠 ===================== */
+
 .native-code-block {
   position: relative;
   overflow: auto;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--editor-code-bg);
-  padding-top: 38px;
+  padding: 0;
+  margin: 16px 0;
 }
 
-.native-code-toolbar {
+.native-code-block code {
+  display: block;
+  padding: 14px 16px;
+  font-family: var(--code-font-family);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* 行号 */
+.code-with-lines code {
+  padding-left: calc(16px + 3.5ch);
+}
+.code-line-numbers {
   position: absolute;
-  inset: 0 0 auto 0;
-  height: 38px;
+  top: 38px;
+  left: 0;
+  bottom: 0;
+  padding: 14px 0;
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+  font-family: var(--code-font-family);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--code-line-number);
+  pointer-events: none;
+  user-select: none;
+}
+.code-line-number {
+  padding: 0 8px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.code-line-number.current {
+  color: var(--code-line-active);
+  font-weight: 700;
+}
+
+/* 单行代码不加行号 */
+.code-single-line .code-line-numbers { display: none; }
+
+/* toolbar */
+.native-code-toolbar {
+  position: sticky;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px;
-  color: var(--editor-muted);
+  padding: 6px 10px;
+  height: 38px;
+  color: var(--code-toolbar-fg);
+  background: var(--code-toolbar-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--editor-muted) 18%, transparent);
+  font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  z-index: 1;
+}
+
+/* 语言徽章 — 圆角矩形,主题色填充 */
+.native-code-lang {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--badge-color, var(--code-badge-default));
+  color: var(--code-badge-fg);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+/* 复制按钮 */
+.native-code-copy {
+  border: 1px solid color-mix(in srgb, var(--editor-muted) 35%, transparent);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--editor-fg);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 200ms, color 200ms, border-color 200ms;
+}
+.native-code-copy:hover {
+  background: color-mix(in srgb, var(--editor-accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--editor-accent) 35%, transparent);
+}
+.native-code-copy .native-code-copy-success {
+  display: none;
+  color: var(--code-copy-success);
+  font-weight: 600;
+}
+.native-code-copy.copied .native-code-copy-default {
+  display: none;
+}
+.native-code-copy.copied .native-code-copy-success {
+  display: inline;
+}
+.native-code-copy.copied {
+  border-color: var(--code-copy-success);
+  color: var(--code-copy-success);
+}
+
+/* ===================== Milkdown 编辑器代码块 ===================== */
+
+/* Milkdown's code-block component owns the CodeMirror instance. Keep its
+   structure separate from native export blocks so editing remains visible. */
+.ProseMirror .milkdown-code-block {
+  position: relative;
+  overflow: visible;
+  margin: 16px 0;
+  border: 1px solid color-mix(in srgb, var(--editor-muted) 28%, transparent);
+  border-radius: 7px;
+  background: var(--editor-code-bg);
+  color: var(--editor-fg);
+}
+
+.ProseMirror .milkdown-code-block.selected {
+  border-color: color-mix(in srgb, var(--editor-accent) 58%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--editor-accent) 16%, transparent);
+}
+
+.ProseMirror .milkdown-code-block .tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 5px 9px;
+  border-bottom: 1px solid color-mix(in srgb, var(--editor-muted) 20%, transparent);
+  background: var(--code-toolbar-bg);
+  color: var(--code-toolbar-fg);
   font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.native-code-toolbar button {
-  border: 1px solid color-mix(in srgb, var(--editor-muted) 35%, transparent);
-  border-radius: 5px;
-  padding: 5px 9px;
-  color: var(--editor-fg);
-  cursor: pointer;
+.ProseMirror .milkdown-code-block .tools-button-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 
+.ProseMirror .milkdown-code-block .language-button,
+.ProseMirror .milkdown-code-block .copy-button,
+.ProseMirror .milkdown-code-block .preview-toggle-button {
+  min-height: 28px;
+  border: 1px solid color-mix(in srgb, var(--editor-muted) 30%, transparent);
+  border-radius: 5px;
+  padding: 4px 9px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.ProseMirror .milkdown-code-block .language-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: min(52vw, 220px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ProseMirror .milkdown-code-block .language-button:hover,
+.ProseMirror .milkdown-code-block .copy-button:hover,
+.ProseMirror .milkdown-code-block .preview-toggle-button:hover {
+  border-color: color-mix(in srgb, var(--editor-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--editor-accent) 10%, transparent);
+  color: var(--editor-fg);
+}
+
+.ProseMirror .milkdown-code-block .expand-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+}
+
+.ProseMirror .milkdown-code-block .codemirror-host {
+  min-height: 96px;
+  overflow: hidden;
+  background: var(--editor-code-bg);
+}
+
+.ProseMirror .milkdown-code-block .cm-editor {
+  min-height: 96px;
+  outline: 0;
+  background: transparent;
+  color: var(--editor-fg);
+  font-family: var(--code-font-family);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.ProseMirror .milkdown-code-block .cm-scroller {
+  overflow: auto;
+  min-height: 96px;
+  padding: 14px 16px;
+  font-family: inherit;
+}
+
+.ProseMirror .milkdown-code-block .cm-content {
+  min-height: 68px;
+  padding: 0;
+  caret-color: var(--editor-accent);
+  font-family: inherit;
+}
+
+.ProseMirror .milkdown-code-block .cm-line {
+  padding: 0;
+}
+
+.ProseMirror .milkdown-code-block .cm-focused {
+  outline: 0;
+}
+
+.ProseMirror .milkdown-code-block .cm-selectionBackground,
+.ProseMirror .milkdown-code-block .cm-content ::selection {
+  background: var(--editor-selection) !important;
+}
+
+.ProseMirror .milkdown-code-block-placeholder {
+  min-height: 96px;
+  box-sizing: border-box;
+  margin: 0;
+  overflow-x: auto;
+  padding: 14px 16px;
+  background: var(--editor-code-bg);
+  color: var(--editor-fg);
+  font: 14px/1.6 var(--code-font-family);
+  white-space: pre;
+}
+
+.ProseMirror .milkdown-code-block-placeholder code {
+  font: inherit;
+}
+
+.ProseMirror .milkdown-code-block .language-picker {
+  position: relative;
+  z-index: 5;
+}
+
+.ProseMirror .milkdown-code-block .list-wrapper {
+  position: fixed;
+  z-index: 20;
+  width: min(260px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--editor-muted) 30%, transparent);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+  box-shadow: 0 8px 24px rgba(23, 32, 29, 0.18);
+}
+
+.ProseMirror .milkdown-code-block .search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-bottom: 1px solid color-mix(in srgb, var(--editor-muted) 20%, transparent);
+}
+
+.ProseMirror .milkdown-code-block .search-input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.ProseMirror .milkdown-code-block .language-list {
+  max-height: min(42vh, 280px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+.ProseMirror .milkdown-code-block .language-list-item {
+  padding: 7px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.ProseMirror .milkdown-code-block .language-list-item:hover,
+.ProseMirror .milkdown-code-block .language-list-item[aria-selected="true"] {
+  background: color-mix(in srgb, var(--editor-accent) 12%, transparent);
+}
+
+.ProseMirror .milkdown-code-block .preview-panel {
+  border-top: 1px solid color-mix(in srgb, var(--editor-muted) 20%, transparent);
+}
+
+.ProseMirror .milkdown-code-block .preview-divider,
+.ProseMirror .milkdown-code-block .preview-label,
+.ProseMirror .milkdown-code-block .preview {
+  padding-inline: 16px;
+}
+
+.ProseMirror .milkdown-code-block .preview-label {
+  padding-top: 8px;
+  color: var(--code-toolbar-fg);
+  font-size: 12px;
+}
+
+@media (max-width: 520px) {
+  .ProseMirror .milkdown-code-block .tools {
+    min-height: 36px;
+    padding-inline: 7px;
+  }
+
+  .ProseMirror .milkdown-code-block .language-button,
+  .ProseMirror .milkdown-code-block .copy-button,
+  .ProseMirror .milkdown-code-block .preview-toggle-button {
+    min-height: 27px;
+    padding-inline: 7px;
+  }
+
+  .ProseMirror .milkdown-code-block .cm-scroller,
+  .ProseMirror .milkdown-code-block-placeholder {
+    padding-inline: 12px;
+  }
+}
+
+/* 折叠态 */
+.code-folded code {
+  max-height: calc(1.6em * 6 + 28px);
+  overflow: hidden;
+  position: relative;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+          mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+.code-fold-overlay {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin: 4px auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--editor-accent) 35%, transparent);
+  background: var(--code-toolbar-bg);
+  color: var(--editor-accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 2;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.code-fold-overlay .code-fold-icon {
+  color: var(--code-fold-icon);
+  margin-right: 2px;
+}
+
+/* Mermaid / 引用 / 列表等其余样式保留 */
 .native-mermaid {
   overflow-x: auto;
   margin: 16px 0;
@@ -111,7 +471,6 @@ textarea::placeholder {
   border-radius: 8px;
   background: var(--editor-code-bg);
 }
-
 .native-mermaid svg {
   max-width: 100%;
   height: auto;
@@ -123,6 +482,31 @@ textarea::placeholder {
 .ProseMirror h4 { font-size: var(--h4-size, 1em); color: var(--h4-color, inherit); margin-block: var(--h4-space, 16px) 8px; }
 .ProseMirror h5 { font-size: var(--h5-size, .875em); color: var(--h5-color, inherit); margin-block: var(--h5-space, 14px) 6px; }
 .ProseMirror h6 { font-size: var(--h6-size, .85em); color: var(--h6-color, inherit); margin-block: var(--h6-space, 12px) 6px; }
+
+/* Markdown tables need an explicit grid in every editor theme. */
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+
+.ProseMirror table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.ProseMirror th,
+.ProseMirror td {
+  border: 1px solid color-mix(in srgb, var(--editor-muted) 35%, transparent);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ProseMirror th {
+  background: color-mix(in srgb, var(--editor-muted) 10%, transparent);
+  font-weight: 700;
+}
 
 .ProseMirror blockquote blockquote,
 .ProseMirror li > ul,

@@ -180,7 +180,8 @@ class NativeRenderChannel(private val activity: Activity) :
         val fileName = call.argument<String>("fileName").orEmpty().ifBlank { "document.html" }
         try {
             val file = exportFile(fileName)
-            file.writeText(htmlDocument(markdown), Charsets.UTF_8)
+            val document = htmlDocument(markdown)
+            file.writeText(document, Charsets.UTF_8)
             result.success(file.absolutePath)
         } catch (error: Exception) {
             result.error("HTML_EXPORT_FAILED", error.message, null)
@@ -220,11 +221,18 @@ class NativeRenderChannel(private val activity: Activity) :
         return enhanceHtml(renderer.render(parser.parse(prepared)))
     }
 
-    private fun htmlDocument(markdown: String): String = """
+    private fun htmlDocument(markdown: String): String {
+        val document = """
         <!doctype html>
         <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>${themeCss()}</style></head><body>${renderFullMarkdown(markdown)}</body></html>
+        <style>${themeCss()}</style></head><body>${renderFullMarkdown(markdown)}
+        </body></html>
     """.trimIndent()
+        return ExportCodeHighlighter.embedRuntime(
+            document,
+            readAsset(activity, "flutter_assets/assets/web/vendor/highlightjs/all.min.js"),
+        )
+    }
 
     private fun themeCss(): String {
         val bg = themeVariables["--editor-bg"] ?: "#ffffff"
@@ -236,8 +244,13 @@ class NativeRenderChannel(private val activity: Activity) :
             val space = themeVariables["--h$level-space"] ?: "16px"
             "h$level{font-size:$size;color:$color;margin-top:$space}"
         }
+        val syntax = ".hljs-keyword,.hljs-selector-tag,.hljs-literal{color:#cf222e;font-weight:600}" +
+            ".hljs-string,.hljs-attr{color:#0a3069}.hljs-number,.hljs-literal{color:#0550ae}" +
+            ".hljs-comment{color:#6e7781;font-style:italic}.hljs-title,.hljs-function{color:#8250df}" +
+            ".hljs-name,.hljs-type{color:#953800}.hljs-built_in{color:#0550ae}"
         return "body{background:$bg;color:$fg;font:16px/1.65 sans-serif;max-width:900px;margin:24px auto;padding:0 20px}" +
             headings +
+            syntax +
             "pre{background:$code;padding:16px;overflow:auto}img,svg,video,audio{max-width:100%}" +
             "blockquote{border-left:3px solid #8b949e;padding-left:12px}" +
             "blockquote blockquote,li>ul,li>ol{border-left:1px solid #8b949e;margin-left:4px;padding-left:16px}" +
@@ -262,7 +275,7 @@ class NativeRenderChannel(private val activity: Activity) :
 
         fun start() {
             try {
-                webView.settings.javaScriptEnabled = false
+                webView.settings.javaScriptEnabled = true
                 // 导出不应在后台访问 Markdown 中的远程图片或媒体地址；
                 // 这样 PDF 生成保持离线且不会泄露文档内容或用户 IP。
                 webView.settings.blockNetworkLoads = true
@@ -417,6 +430,12 @@ class NativeRenderChannel(private val activity: Activity) :
 
     private fun escapeAttribute(value: String): String = escapeHtml(value).replace("\n", "&#10;")
 
+    private fun readAsset(context: Context, path: String): String = try {
+        context.assets.open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
+    } catch (_: Exception) {
+        ""
+    }
+
     private data class Pending(
         val result: MethodChannel.Result,
         val key: String,
@@ -505,12 +524,6 @@ class NativeRenderChannel(private val activity: Activity) :
             fun onError(id: String, message: String) {
                 main.post { pending.remove(id)?.result?.error("RENDER_FAILED", message, null) }
             }
-        }
-
-        private fun readAsset(context: Context, path: String): String = try {
-            context.assets.open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
-        } catch (_: Exception) {
-            ""
         }
     }
 }

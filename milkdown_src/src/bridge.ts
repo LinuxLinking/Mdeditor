@@ -5,15 +5,16 @@
  * 反向(Dart 接收 JS 消息):通过 `window.MdBridge.postMessage(json)`
  * 触发 Flutter 端 `addJavaScriptChannel('MdBridge', onMessageReceived: ...)`。
  *
- * 消息类型(对齐 dev-doc.md 第 8.3 节):
- *   - { type: 'ready' }                  Milkdown 初始化完成
- *   - { type: 'changed', md: string }    内容变更
- *   - { type: 'error', message: string } 错误上报
+ * Phase 7b 改造:
+ *   - setupBridge 接收 EditorTheme,初始化时已注入
+ *   - applyThemeVariables:把主题变量写入 :root,并触发 native_features 刷新
+ *   - setTheme:运行时切换主题,触发 Milkdown 全量重渲染以更新 codeHighlight
  */
 import type { Editor } from '@milkdown/kit';
 import { getMarkdown, replaceAll } from '@milkdown/kit/utils';
+import type { EditorTheme } from './main';
 
-type BridgeMode = 'wysiwyg' | 'source';
+export type BridgeMode = 'wysiwyg' | 'source';
 
 /** Block-level JSON patch emitted by the native incremental renderer. */
 export interface NativeDomPatch {
@@ -25,12 +26,12 @@ export interface NativeDomPatch {
 }
 
 export interface BridgeApi {
-  init(opts: { initialContent: string; theme: string }): Promise<void>;
+  init(opts: { initialContent: string; theme: EditorTheme }): Promise<void>;
   setContent(md: string): void;
   getContent(): string;
   getHTML(): string;
   setMode(mode: BridgeMode): void;
-  setTheme(variables: Record<string, string>): void;
+  setTheme(theme: EditorTheme): void;
   applyPatches(patches: NativeDomPatch[]): void;
   renderMermaid(source: string, hash?: string): void;
 }
@@ -44,6 +45,7 @@ declare global {
       applyPatches?: (patches: NativeDomPatch[]) => void;
       refresh?: (root?: ParentNode) => void;
       rememberSelection?: (range: Range | null) => void;
+      applyCodeBadges?: (map: Record<string, string>) => void;
     };
   }
 }
@@ -76,8 +78,34 @@ function applyNativePatches(patches: NativeDomPatch[]): void {
   }
 }
 
+/**
+ * Apply theme variables to the document root, plus drive native_features
+ * (line-number / badge / font) tokens. Used both at init time and on
+ * `bridge.setTheme`.
+ */
+export function applyThemeVariables(theme: EditorTheme): void {
+  const html = document.documentElement;
+  html.classList.add('theme-transitioning');
+  Object.entries(theme.variables || {}).forEach(([key, value]) => {
+    html.style.setProperty(key, value);
+  });
+  // Mono font stack
+  if (theme.codeFonts && theme.codeFonts.length) {
+    const family = theme.codeFonts.map((f) => /[\s]/.test(f) ? `"${f}"` : f).join(', ');
+    html.style.setProperty('--code-font-family', family);
+  }
+  // Badge colors → per-language CSS variables
+  if (theme.codeBadgeMap) {
+    Object.entries(theme.codeBadgeMap).forEach(([lang, color]) => {
+      html.style.setProperty(`--code-badge-${lang}`, color);
+    });
+  }
+  window.setTimeout(() => html.classList.remove('theme-transitioning'), 500);
+  window.nativeFeatures?.applyCodeBadges?.(theme.codeBadgeMap || {});
+}
+
 export function postBridge(
-  type: 'ready' | 'changed' | 'selection' | 'mermaidRequest' | 'error',
+  type: 'ready' | 'changed' | 'selection' | 'mermaidRequest' | 'error' | 'codeCopied',
   payload: Record<string, unknown> = {},
 ): void {
   try {
@@ -92,7 +120,7 @@ export function postBridge(
  * 把已初始化的 [editor] 封装为 BridgeApi 并注册到 `window.bridge`。
  * 由 main.ts 在 `Editor.make().create()` 完成后调用。
  */
-export function setupBridge(editor: Editor): void {
+export function setupBridge(editor: Editor, theme: EditorTheme): void {
   // Coordinates are emitted in the WebView root's coordinate space, matching
   // the Flutter Stack that hosts WebViewWidget. This remains stable for text
   // in paragraphs, tables, and nested code editors.
@@ -153,11 +181,51 @@ export function setupBridge(editor: Editor): void {
       const el = document.getElementById('app');
       return el ? el.innerHTML : '';
     },
-    setMode(_mode: BridgeMode) {
-      // TODO Phase 1+:切换 WYSIWYG / 源码模式(Milkdown v7 源码模式需额外配置)
+    setMode(mode: BridgeMode) {
+      const root = document.getElementById('app');
+      if (!root) return;
+      const md = editor.action(getMarkdown()) ?? '';
+      if (mode === 'source') {
+        // 源码模式：隐藏 Milkdown，显示 textarea
+        const proseEl = root.querySelector('.ProseMirror');
+        if (proseEl) (proseEl as HTMLElement).style.display = 'none';
+        let textarea = root.querySelector('#source-textarea') as HTMLTextAreaElement;
+        if (!textarea) {
+          textarea = document.createElement('textarea');
+          textarea.id = 'source-textarea';
+          textarea.className = 'source-textarea';
+          textarea.value = md;
+          textarea.setAttribute('aria-label', 'Markdown source');
+          textarea.style.cssText = 'width:100%;height:100%;padding:18px;font-family:monospace;background:var(--editor-bg,#fff);color:var(--editor-fg,#24292f);border:none;resize:none;outline:none;box-sizing:border-box;';
+          textarea.addEventListener('input', () => {
+            postBridge('changed', { md: textarea.value });
+          });
+          root.appendChild(textarea);
+        } else {
+          textarea.value = md;
+          textarea.style.display = 'block';
+        }
+      } else {
+        // WYSIWYG 模式：显示 Milkdown，隐藏 textarea
+        const textarea = root.querySelector('#source-textarea') as HTMLTextAreaElement;
+        if (textarea) {
+          textarea.style.display = 'none';
+        }
+        const proseEl = root.querySelector('.ProseMirror');
+        if (proseEl) (proseEl as HTMLElement).style.display = '';
+        // 将 textarea 内容应用回编辑器
+        if (textarea && editor) {
+          editor.action(replaceAll(textarea.value));
+        }
+      }
     },
-    setTheme(variables: Record<string, string>) {
-      window.nativeFeatures?.setTheme?.(variables);
+    setTheme(newTheme: EditorTheme) {
+      applyThemeVariables(newTheme);
+      // 触发全量重渲染以让 CodeMirror HighlightStyle 重新应用
+      const md = editor.action(getMarkdown()) ?? '';
+      editor.action(replaceAll(md));
+      // 让 native_features 刷新 toolbar / 徽章
+      window.nativeFeatures?.refresh?.(document);
     },
     applyPatches: applyNativePatches,
     renderMermaid(source: string, hash = '') {

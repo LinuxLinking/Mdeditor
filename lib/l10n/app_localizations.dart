@@ -12,7 +12,7 @@ class AppLocalizations {
   String format(String key, Map<String, Object> values) {
     var text = t(key);
     for (final entry in values.entries) {
-      text = text.replaceAll('\${entry.key}', entry.value.toString());
+      text = text.replaceAll('{${entry.key}}', entry.value.toString());
     }
     return text;
   }
@@ -66,6 +66,10 @@ const Map<String, String> _zh = <String, String>{
   'github_light': 'GitHub Light',
   'github_dark': 'GitHub Dark',
   'vue_theme': 'Vue',
+  'typora_theme': 'Typora Default',
+  'source_mode': 'Source Mode',
+  'wysiwyg_mode': 'WYSIWYG',
+  'nord_theme': 'Nord',
   'editor_theme_desc': '同步应用到原生解析器与 WebView 渲染层',
   'theme_system': '跟随系统',
   'theme_system_desc': '浅色和深色自动切换',
@@ -146,6 +150,10 @@ const Map<String, String> _en = <String, String>{
   'github_light': 'GitHub Light',
   'github_dark': 'GitHub Dark',
   'vue_theme': 'Vue',
+  'typora_theme': 'Typora Default',
+  'source_mode': 'Source Mode',
+  'wysiwyg_mode': 'WYSIWYG',
+  'nord_theme': 'Nord',
   'editor_theme_desc': 'Applied to the native parser and WebView renderer',
   'theme_system': 'Follow system',
   'theme_system_desc': 'Switches automatically between light and dark',
@@ -215,3 +223,4 @@ class _AppLocalizationsDelegate
   @override
   bool shouldReload(LocalizationsDelegate<AppLocalizations> old) => false;
 }
+

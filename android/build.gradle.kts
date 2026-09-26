@@ -1,5 +1,6 @@
 allprojects {
     repositories {
+        maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         google()
         mavenCentral()
     }

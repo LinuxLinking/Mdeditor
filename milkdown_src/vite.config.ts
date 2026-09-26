@@ -22,6 +22,8 @@ export default defineConfig({
     rollupOptions: {
       // Milkdown v7 模块较多,强制内联动态导入为单文件
       output: { inlineDynamicImports: true },
+      // 强制保留 codeBlockComponent:它通过 .use() 调用但可能被 tree-shaking 消除
+      treeshake: false,
     },
     // Android 9 WebView 兼容:target es2017
     target: 'es2017',
@@ -30,6 +32,12 @@ export default defineConfig({
   },
   // ProseMirror / Milkdown 某些内部依赖需保留
   optimizeDeps: {
-    include: ['@milkdown/kit', '@milkdown/theme-nord', 'prosemirror-markdown'],
+    include: [
+      '@milkdown/kit',
+      '@milkdown/theme-nord',
+      'prosemirror-markdown',
+      // codeBlockComponent 被 tree-shaking 消除,需强制保留
+      '@milkdown/kit/component/code-block',
+    ],
   },
 });

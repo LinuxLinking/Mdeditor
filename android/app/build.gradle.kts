@@ -31,6 +31,7 @@ android {
 
 dependencies {
     implementation(project(":render-core"))
+    testImplementation("junit:junit:4.13.2")
 
     // dexmaker 动态代理：用于在运行时创建 Android 包私有构造函数的回调子类
     // （PrintDocumentAdapter.LayoutResultCallback/WriteResultCallback 无法直接 new）。

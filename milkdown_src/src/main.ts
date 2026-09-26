@@ -4,12 +4,10 @@
  * Vite 打包为 IIFE 单文件 `assets/web/editor.js`,由 Flutter WebView 通过
  * `loadFlutterAsset('assets/web/index.html')` 加载。
  *
- * 对齐 docs/dev-doc.md 第 8.2 节。
- *
- * Phase 6 修复:
- *   - 删除 `@milkdown/kit/plugin/prism`(v7.22.1 该路径不存在)
- *   - 改用 `@milkdown/kit/component/code-block`(v7 内置 CodeMirror 代码块组件)
- *   - 修正 CSS 路径为 `@milkdown/theme-nord/style.css`
+ * Phase 7b 改造:
+ *   - 移除硬编码 codeHighlight,改为根据 `bridge.init(opts.theme)` 注入
+ *   - 移除 `use(nord)` 旧装饰逻辑(由 themes 变量驱动)
+ *   - codeHighlight / codeBadgeMap / codeFonts 由 Dart 端推送
  */
 import { Editor, rootCtx, defaultValueCtx } from '@milkdown/kit/core';
 import { commonmark } from '@milkdown/kit/preset/commonmark';
@@ -19,27 +17,98 @@ import { clipboard } from '@milkdown/kit/plugin/clipboard';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { cursor } from '@milkdown/kit/plugin/cursor';
 import { codeBlockComponent, codeBlockConfig } from '@milkdown/kit/component/code-block';
-import { LanguageDescription, StreamLanguage } from '@codemirror/language';
+import { LanguageDescription, StreamLanguage, StreamParser } from '@codemirror/language';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { tags } from '@lezer/highlight';
-import { keymap } from '@milkdown/kit/prose/keymap';
-import { inputRules, InputRule } from '@milkdown/kit/prose/inputrules';
-import { nord } from '@milkdown/theme-nord';
-import '@milkdown/theme-nord/style.css';
+import { Tag, tags as t } from '@lezer/highlight';
 
-import { setupBridge, postBridge } from './bridge';
-import type { Plugin, Selection } from '@milkdown/kit/prose/state';
-import { $prose } from '@milkdown/kit/utils';
-import { TextSelection } from '@milkdown/kit/prose/state';
+import { setupBridge, postBridge, applyThemeVariables, type BridgeMode } from './bridge';
 
 let editor: Editor | null = null;
+let currentTheme: EditorTheme | null = null;
+let currentContent: string = '';  // 保存切换前的编辑器内容
+let editorMode: 'wysiwyg' | 'source' = 'wysiwyg';
+
+/** Theme payload delivered from Dart through `bridge.init`. */
+export interface EditorTheme {
+  name: string;
+  variables: Record<string, string>;
+  codeHighlight: HighlightSpec[];
+  codeBadgeMap: Record<string, string>;
+  codeFonts: string[];
+}
+
+export interface HighlightSpec {
+  tag: string;
+  color: string;
+  fontStyle?: string;
+  fontWeight?: string;
+}
+
+/** Map of lezer/highlight tag string → tag instance. */
+const TAG_MAP: Record<string, Tag> = {
+  comment: t.comment,
+  lineComment: t.lineComment,
+  blockComment: t.blockComment,
+  docComment: t.docComment,
+  string: t.string,
+  string2: t.string2,
+  number: t.number,
+  integer: t.integer,
+  float: t.float,
+  keyword: t.keyword,
+  controlKeyword: t.controlKeyword,
+  operatorKeyword: t.operatorKeyword,
+  typeName: t.typeName,
+  typeOperator: t.typeOperator,
+  function: t.function(t.name),
+  functionName: t.function(t.definition(t.variableName)),
+  operator: t.operator,
+  punctuation: t.punctuation,
+  variableName: t.variableName,
+  variableName2: t.variableName2,
+  definition: t.definition(t.variableName),
+  special: t.special(t.string),
+  meta: t.meta,
+  tagName: t.tagName,
+  attributeName: t.attributeName,
+  attributeValue: t.attributeValue,
+  heading: t.heading,
+  link: t.link,
+  url: t.url,
+  emphasis: t.emphasis,
+  strong: t.strong,
+  monospace: t.monospace,
+  strikethrough: t.strikethrough,
+  inserted: t.inserted,
+  deleted: t.deleted,
+  changed: t.changed,
+  invalid: t.invalid,
+  regexp: t.regexp,
+  escape: t.escape,
+  contentSeparator: t.contentSeparator,
+};
+
+/** Build HighlightStyle from Dart-pushed HighlightSpec[]. */
+function buildHighlightStyle(specs: HighlightSpec[]): HighlightStyle {
+  const styles = specs.map((s) => {
+    const tag = TAG_MAP[s.tag];
+    if (!tag) return null;
+    return {
+      tag,
+      color: s.color,
+      ...(s.fontStyle ? { fontStyle: s.fontStyle } : {}),
+      ...(s.fontWeight ? { fontWeight: s.fontWeight } : {}),
+    };
+  }).filter((x): x is NonNullable<typeof x> => x !== null);
+  return HighlightStyle.define(styles as any);
+}
 
 /**
  * Keep the editing surface usable if a Milkdown plugin fails to initialise on
  * an older Android WebView.  A blank WebView is much worse than a plain
  * Markdown textarea: users can still open, edit and save the document.
  */
-function mountFallback(root: HTMLElement, initialContent: string): void {
+function mountFallback(root: HTMLElement, initialContent: string, theme: EditorTheme | null): void {
   root.innerHTML = '';
   const textarea = document.createElement('textarea');
   textarea.value = initialContent;
@@ -48,60 +117,52 @@ function mountFallback(root: HTMLElement, initialContent: string): void {
     postBridge('changed', { md: textarea.value });
   });
   root.appendChild(textarea);
+  if (theme) applyThemeVariables(theme);
   window.bridge = {
     init: async () => {},
     setContent: (md: string) => { textarea.value = md; },
     getContent: () => textarea.value,
     getHTML: () => `<pre>${textarea.value.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] ?? c))}</pre>`,
-    setMode: () => {},
-    setTheme: () => {},
+    setMode: (mode: BridgeMode) => {
+      if (mode === 'source') {
+        // 切换到源码模式：保存当前内容并显示 textarea
+        currentContent = editor ? (editor.action(getMarkdown()) ?? '') : textarea.value;
+        textarea.value = currentContent;
+        if (editor) {
+          // 隐藏 ProseMirror 但保留
+          const proseEl = root.querySelector('.ProseMirror');
+          if (proseEl) proseEl.attachShadow?.({ mode: 'closed' }) || (proseEl as HTMLElement).style?.setProperty('display', 'none');
+        }
+        textarea.style.display = 'block';
+        editorMode = 'source';
+      } else {
+        // 切换到 WYSIWYG 模式：textarea 保持显示（Milkdown fallback 时）
+        textarea.style.display = 'block';
+        editorMode = 'wysiwyg';
+      }
+    },
+    setTheme: (t: EditorTheme) => applyThemeVariables(t),
     applyPatches: () => {},
     renderMermaid: () => {},
   };
   postBridge('ready');
 }
 
-async function init(opts: { initialContent: string; theme: string }): Promise<void> {
+async function init(opts: { initialContent: string; theme: EditorTheme }): Promise<void> {
   const root = document.getElementById('app');
   try {
     if (!root) throw new Error('#app element not found');
+    currentTheme = opts.theme;
+    applyThemeVariables(opts.theme);
 
-    // 自动补全:方括号/圆括号输入时自动插入配对;所有配对符号输入闭合时跳过已有的右符号。
-    const skipChars = new Set(['*', '`', ']', ')']);
-    const autoCloseKeymap = $prose(() => keymap({
-      '[': (state: any, dispatch: any) => {
-        if (state.selection.$from.parent.type.spec.code) return false;
-        if (!state.selection.empty) return false;
-        const pos = state.selection.from;
-        const tr = state.tr.insertText('[]', pos, pos);
-        tr.setSelection(TextSelection.create(tr.doc, pos + 1));
-        dispatch(tr);
-        return true;
-      },
-      '(': (state: any, dispatch: any) => {
-        if (state.selection.$from.parent.type.spec.code) return false;
-        if (!state.selection.empty) return false;
-        const pos = state.selection.from;
-        const tr = state.tr.insertText('()', pos, pos);
-        tr.setSelection(TextSelection.create(tr.doc, pos + 1));
-        dispatch(tr);
-        return true;
-      },
-    }) as Plugin);
-    // 输入闭合符号时:如果光标后面紧跟同样的符号,直接跳过而非重复插入。
-    const closingRules = Array.from(skipChars).map(
-      (ch) => new InputRule(new RegExp(`${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), (state) => {
-        const { $from, empty } = state.selection;
-        if (!empty || $from.parent.type.spec.code) return null;
-        const next = state.doc.textBetween(
-          state.selection.from,
-          Math.min(state.selection.from + 1, state.doc.content.size),
-        );
-        return next === ch ? state.tr.insertText('') : null;
-      }),
-    );
-    const closingInputRulesPlugin = $prose(() => inputRules({ rules: closingRules }) as any as Plugin);
 
+    const codeHighlight = buildHighlightStyle(opts.theme.codeHighlight);
+    const monoFontFamily = opts.theme.codeFonts.length
+      ? opts.theme.codeFonts.map((f) => /[\s]/.test(f) ? `"${f}"` : f).join(', ')
+      : 'monospace';
+
+    // 强制保留 codeBlockComponent:通过 setupBridge 引用防止 tree-shaking 消除
+    const _codeBlockRef = { component: codeBlockComponent, config: codeBlockConfig };
     editor = await Editor.make()
       .use(commonmark)
       .use(gfm)
@@ -109,36 +170,28 @@ async function init(opts: { initialContent: string; theme: string }): Promise<vo
       .use(clipboard)
       .use(cursor)
       .use(listener)
-      .use(autoCloseKeymap)
-      .use(closingInputRulesPlugin)
       .use(codeBlockComponent)
       .config((ctx) => {
         ctx.set(rootCtx, root);
         ctx.set(defaultValueCtx, opts.initialContent);
-        // 代码块组件配置:使用 StreamLanguage 定义轻量语言支持。
-        // 不依赖 @codemirror/language-data,保持 APK 体积可控。
-        const codeHighlight = HighlightStyle.define([
-          { tag: tags.comment, color: '#6a737d', fontStyle: 'italic' },
-          { tag: tags.string, color: '#22863a' },
-          { tag: tags.number, color: '#005cc5' },
-          { tag: tags.keyword, color: '#d73a49', fontWeight: 'bold' },
-          { tag: tags.typeName, color: '#6f42c1' },
-          { tag: tags.function(tags.name), color: '#6f42c1' },
-          { tag: tags.operator, color: '#d73a49' },
-          { tag: tags.variableName, color: '#24292e' },
-          { tag: tags.definition(tags.name), color: '#6f42c1' },
-          { tag: tags.special(tags.string), color: '#e36209' },
-        ]);
+        // CodeBlock 字体从主题变量栈读取
+        document.documentElement.style.setProperty('--code-font-family', monoFontFamily);
+        // CodeBlock 徽章颜色暴露给 native_features 用于高亮顶部 toolbar
+        Object.entries(opts.theme.codeBadgeMap).forEach(([lang, color]) => {
+          document.documentElement.style.setProperty(`--code-badge-${lang}`, color);
+        });
         const mkLang = (name: string, aliases: string[], keywords: string[], builtins: string[] = []) =>
           LanguageDescription.of({
             name,
             alias: aliases,
-            support: StreamLanguage.define({
-              token(stream, _state) {
-                if (stream.match(/\/\/.*/)) return 'comment';
+            support: StreamLanguage.define<StreamParser>({
+              token: (stream: any) => {
+                if (stream.eatSpace()) return null;
+                if (stream.match(/(?:[^`\\]|\\.)*?`/)) return 'string';
+                if (stream.match(/\/\/[^\n]*/)) return 'comment';
                 if (stream.match(/\/\*[\s\S]*?\*\//)) return 'comment';
-                if (stream.match(/#.*/)) return 'comment';
-                if (stream.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/)) return 'string';
+                if (stream.match(/"(?:[^"\\]|\\.)*"/)) return 'string';
+                if (stream.match(/'(?:[^'\\]|\\.)*'/)) return 'string';
                 if (stream.match(/\b\d+\.?\d*\b/)) return 'number';
                 if (stream.match(new RegExp('\\b(' + keywords.join('|') + ')\\b'))) return 'keyword';
                 if (builtins.length && stream.match(new RegExp('\\b(' + builtins.join('|') + ')\\b'))) return 'typeName';
@@ -161,12 +214,10 @@ async function init(opts: { initialContent: string; theme: string }): Promise<vo
             ['html','head','body','div','span','p','a','img','ul','ol','li','table','tr','td','th','form','input','button','select','option','script','style','link','meta','title','h1','h2','h3','h4','h5','h6','br','hr']),
           mkLang('css', ['scss', 'less'],
             ['color','background','margin','padding','border','font','display','position','width','height','top','left','right','bottom','flex','grid','transition','animation','transform','opacity','z-index','overflow','cursor']),
-          mkLang('json', [],
-            []),
+          mkLang('json', [], []),
           mkLang('sql', [],
             ['SELECT','FROM','WHERE','INSERT','INTO','VALUES','UPDATE','SET','DELETE','CREATE','TABLE','ALTER','DROP','INDEX','JOIN','LEFT','RIGHT','INNER','OUTER','ON','AND','OR','NOT','IN','BETWEEN','LIKE','ORDER','BY','GROUP','HAVING','LIMIT','OFFSET','UNION','AS','DISTINCT','NULL','IS','TRUE','FALSE','COUNT','SUM','AVG','MIN','MAX']),
-          mkLang('markdown', ['md'],
-            []),
+          mkLang('markdown', ['md'], []),
         ];
 
         ctx.set(codeBlockConfig.key, {
@@ -190,30 +241,39 @@ async function init(opts: { initialContent: string; theme: string }): Promise<vo
           postBridge('changed', { md });
         });
       })
-      .use(nord)
       .create();
 
-    setupBridge(editor);
+    setupBridge(editor, opts.theme);
+    // 暴露 codeBlockRef 到全局,防止 tree-shaking 消除
+    (window as any).__codeBlockRef = _codeBlockRef;
     postBridge('ready');
   } catch (e) {
     // Do not leave #app empty when Milkdown is incompatible with the device.
     // The fallback still fulfils the core open/edit/save workflow.
-    if (root) mountFallback(root, opts.initialContent);
+    if (root) mountFallback(root, opts.initialContent, opts.theme);
     postBridge('error', { message: String(e) });
     console.error('Milkdown initialisation failed; using textarea fallback', e);
+    if (e && e.stack) console.error('Stack:', e.stack);
   }
 }
 
+/** Get the active theme — used by bridge.setTheme to refresh. */
+export function getActiveTheme(): EditorTheme | null {
+  return currentTheme;
+}
+
 // 暴露给 Flutter 端 runJavaScript 调用。
-// init() 完成前(setupBridge 未执行),setContent/getContent 等为 noop/空;
-// init() 内部调用 setupBridge 后会覆盖为真实实现。
 window.bridge = {
   init,
   setContent: (_md: string) => { /* init 前为 noop */ },
   getContent: () => '',
   getHTML: () => '',
   setMode: (_mode: 'wysiwyg' | 'source') => { /* TODO Phase 1+ */ },
-  setTheme: (_variables) => { /* setupBridge installs the DOM implementation */ },
+  setTheme: (theme: EditorTheme) => {
+    currentTheme = theme;
+    applyThemeVariables(theme);
+    // 由 bridge 层处理 Milkdown 重渲染
+  },
   applyPatches: (_patches) => { /* setupBridge installs the DOM implementation */ },
   renderMermaid: (_source, _hash) => { /* setupBridge installs the native request */ },
 };
