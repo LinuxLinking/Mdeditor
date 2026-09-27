@@ -225,40 +225,13 @@ class NativeRenderChannel(private val activity: Activity) :
         val document = """
         <!doctype html>
         <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>${themeCss()}</style></head><body>${renderFullMarkdown(markdown)}
+        <style>${ExportDocumentStyle.css(themeVariables)}</style></head><body>${renderFullMarkdown(markdown)}
         </body></html>
     """.trimIndent()
         return ExportCodeHighlighter.embedRuntime(
             document,
             readAsset(activity, "flutter_assets/assets/web/vendor/highlightjs/all.min.js"),
         )
-    }
-
-    private fun themeCss(): String {
-        val bg = themeVariables["--editor-bg"] ?: "#ffffff"
-        val fg = themeVariables["--editor-fg"] ?: "#24292f"
-        val code = themeVariables["--editor-code-bg"] ?: "#f6f8fa"
-        val headings = (1..6).joinToString("") { level ->
-            val size = themeVariables["--h$level-size"] ?: "${2.2 - level * 0.22}em"
-            val color = themeVariables["--h$level-color"] ?: fg
-            val space = themeVariables["--h$level-space"] ?: "16px"
-            "h$level{font-size:$size;color:$color;margin-top:$space}"
-        }
-        val syntax = ".hljs-keyword,.hljs-selector-tag,.hljs-literal{color:#cf222e;font-weight:600}" +
-            ".hljs-string,.hljs-attr{color:#0a3069}.hljs-number,.hljs-literal{color:#0550ae}" +
-            ".hljs-comment{color:#6e7781;font-style:italic}.hljs-title,.hljs-function{color:#8250df}" +
-            ".hljs-name,.hljs-type{color:#953800}.hljs-built_in{color:#0550ae}"
-        return "body{background:$bg;color:$fg;font:16px/1.65 sans-serif;max-width:900px;margin:24px auto;padding:0 20px}" +
-            headings +
-            syntax +
-            "pre{background:$code;padding:16px;overflow:auto}img,svg,video,audio{max-width:100%}" +
-            "blockquote{border-left:3px solid #8b949e;padding-left:12px}" +
-            "blockquote blockquote,li>ul,li>ol{border-left:1px solid #8b949e;margin-left:4px;padding-left:16px}" +
-            ".media-card{border:1px solid #8b949e;border-radius:8px;padding:12px;margin:16px 0}" +
-            ".native-image{display:flex;margin:16px 0}.native-image.align-left{justify-content:flex-start}" +
-            ".native-image.align-center{justify-content:center}.native-image.align-right{justify-content:flex-end}" +
-            ".native-image img{width:min(var(--image-width,100%),100%);height:auto}" +
-            "@page{size:A4;margin:18mm}@media print{body{margin:0;max-width:none}pre,table,figure{break-inside:avoid}}"
     }
 
     private inner class PdfExportJob(

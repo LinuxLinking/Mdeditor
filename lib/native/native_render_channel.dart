@@ -2,14 +2,49 @@ import 'package:flutter/services.dart';
 
 /// Theme data shared by the Flutter shell and the Android renderer.
 class NativeEditorTheme {
-  const NativeEditorTheme({required this.name, required this.variables});
+  const NativeEditorTheme({
+    required this.name,
+    required this.variables,
+    this.codeBadgeMap = const <String, String>{},
+    this.codeFonts = const <String>[],
+    this.codeHighlight = const <NativeCodeHighlight>[],
+  });
 
   final String name;
   final Map<String, String> variables;
+  final Map<String, String> codeBadgeMap;
+  final List<String> codeFonts;
+  final List<NativeCodeHighlight> codeHighlight;
 
   Map<String, Object> toMap() => <String, Object>{
     'name': name,
     'variables': variables,
+    'codeBadgeMap': codeBadgeMap,
+    'codeFonts': codeFonts,
+    'codeHighlight': codeHighlight
+        .map((NativeCodeHighlight highlight) => highlight.toMap())
+        .toList(growable: false),
+  };
+}
+
+class NativeCodeHighlight {
+  const NativeCodeHighlight({
+    required this.tag,
+    required this.color,
+    this.fontStyle,
+    this.fontWeight,
+  });
+
+  final String tag;
+  final String color;
+  final String? fontStyle;
+  final String? fontWeight;
+
+  Map<String, Object> toMap() => <String, Object>{
+    'tag': tag,
+    'color': color,
+    if (fontStyle != null) 'fontStyle': fontStyle!,
+    if (fontWeight != null) 'fontWeight': fontWeight!,
   };
 }
 
