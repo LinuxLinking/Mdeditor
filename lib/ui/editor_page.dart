@@ -151,6 +151,9 @@ class _EditorPageState extends State<EditorPage> {
 
     try {
       final md = await _editor.getContent();
+      // 修导出:二次检查——getContent 是 await,期间可能已进入 _saveAs,
+      // 此时写旧 uri 会与新 uri 并存,跳过。
+      if (_isSaveAsInProgress) return;
       await FileService.instance.writeText(uri, md);
       _editor.markSaved();
       if (mounted) setState(() => _lastSavedAt = DateTime.now());
@@ -193,7 +196,14 @@ class _EditorPageState extends State<EditorPage> {
       return;
     }
 
-    // 修导出:整个「另存为」期间标记进行中,阻止 autosave 写旧 uri 产生重复文件。
+    // 修导出:重入保护——双击保存/菜单+按钮并发时,阻止第二次 _saveAs 进入,
+    // 避免两次 pickSaveLocation 创建两个 SAF 条目(一个被写、一个留 0B)。
+    if (_isSaveAsInProgress) {
+      debugPrint('[SAVEAS] rejected: already in progress');
+      return;
+    }
+    // 取消已 armed 的 autosave 定时器,并标记进行中,阻止 autosave 写旧 uri。
+    _autoSaveTimer?.cancel();
     _isSaveAsInProgress = true;
     try {
       late final String md;
@@ -210,6 +220,7 @@ class _EditorPageState extends State<EditorPage> {
         suggestedName: _markdownFileName(_name),
         mime: 'text/markdown',
       );
+      debugPrint('[SAVEAS] picked uri=$uri');
       if (uri == null) return;
 
       try {
@@ -228,6 +239,8 @@ class _EditorPageState extends State<EditorPage> {
         if (!mounted) return;
         _showMessage(l.format('saved_as_file', {'name': name}));
       } catch (e, s) {
+        // 修导出:writeText 失败时清理已 pick 的 0B 文件(之前 save 路径漏了清理)。
+        await _safeDelete(uri);
         if (!mounted) return;
         ErrorHandler.report(e, s);
         _showMessage('${l.t('save_as_failed')}: $e');
