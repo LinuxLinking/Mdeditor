@@ -133,7 +133,13 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 
+  /// 修导出:标记「另存为」进行中,阻止 autosave 在 _saveAs 等 pick 期间
+  /// 写入旧 _uri 产生重复文件。
+  bool _isSaveAsInProgress = false;
+
   Future<void> _autoSave() async {
+    // 修导出:另存为进行中时跳过,避免 autosave 写旧 uri 与 saveAs 写新 uri 并存。
+    if (_isSaveAsInProgress) return;
     final uri = _uri;
     if (uri == null ||
         !_editor.isDirty ||
@@ -187,41 +193,47 @@ class _EditorPageState extends State<EditorPage> {
       return;
     }
 
-    late final String md;
+    // 修导出:整个「另存为」期间标记进行中,阻止 autosave 写旧 uri 产生重复文件。
+    _isSaveAsInProgress = true;
     try {
-      md = await _editor.getContentForSave();
-    } catch (e, s) {
-      if (!mounted) return;
-      ErrorHandler.report(e, s);
-      _showMessage('${l.t('save_as_failed')}: $e');
-      return;
-    }
+      late final String md;
+      try {
+        md = await _editor.getContentForSave();
+      } catch (e, s) {
+        if (!mounted) return;
+        ErrorHandler.report(e, s);
+        _showMessage('${l.t('save_as_failed')}: $e');
+        return;
+      }
 
-    final uri = await FileService.instance.pickSaveLocation(
-      suggestedName: _markdownFileName(_name),
-      mime: 'text/markdown',
-    );
-    if (uri == null) return;
-
-    try {
-      await FileService.instance.writeText(uri, md);
-      final name = await _displayNameFor(
-        uri,
-        fallback: _markdownFileName(_name),
+      final uri = await FileService.instance.pickSaveLocation(
+        suggestedName: _markdownFileName(_name),
+        mime: 'text/markdown',
       );
-      if (!mounted) return;
-      setState(() {
-        _uri = uri;
-        _name = name;
-      });
-      _editor.markSaved();
-      await _rememberRecent(uri, name);
-      if (!mounted) return;
-      _showMessage(l.format('saved_as_file', {'name': name}));
-    } catch (e, s) {
-      if (!mounted) return;
-      ErrorHandler.report(e, s);
-      _showMessage('${l.t('save_as_failed')}: $e');
+      if (uri == null) return;
+
+      try {
+        await FileService.instance.writeText(uri, md);
+        final name = await _displayNameFor(
+          uri,
+          fallback: _markdownFileName(_name),
+        );
+        if (!mounted) return;
+        setState(() {
+          _uri = uri;
+          _name = name;
+        });
+        _editor.markSaved();
+        await _rememberRecent(uri, name);
+        if (!mounted) return;
+        _showMessage(l.format('saved_as_file', {'name': name}));
+      } catch (e, s) {
+        if (!mounted) return;
+        ErrorHandler.report(e, s);
+        _showMessage('${l.t('save_as_failed')}: $e');
+      }
+    } finally {
+      _isSaveAsInProgress = false;
     }
   }
 
