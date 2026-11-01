@@ -123,6 +123,16 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 
+  /// 删除已 pick 的 SAF 目标,用于导出写入失败时清理 0B 残留。
+  /// 静默失败:删除本身出错不抛给用户(原写入错误更值得关注)。
+  Future<void> _safeDelete(Uri uri) async {
+    try {
+      await FileService.instance.deleteUri(uri);
+    } catch (e) {
+      debugPrint('cleanup delete failed for $uri: $e');
+    }
+  }
+
   Future<void> _autoSave() async {
     final uri = _uri;
     if (uri == null ||
@@ -247,11 +257,8 @@ class _EditorPageState extends State<EditorPage> {
         return;
       }
       final suggestedName = _exportFileName(_name, '.pdf');
-      final target = await FileService.instance.pickSaveLocation(
-        suggestedName: suggestedName,
-        mime: 'application/pdf',
-      );
-      if (target == null) return;
+      // 修导出:先生成内容(Kotlin 写 cacheDir 临时文件),失败直接 return,
+      // 不触发 SAF pick → 不会在 Download 物化 0B 文件条目。
       final path = await NativeRenderChannel.exportPdf(
         markdown: markdown,
         fileName: suggestedName,
@@ -262,12 +269,24 @@ class _EditorPageState extends State<EditorPage> {
         _showMessage(l.t('pdf_export_failed'));
         return;
       }
-      await FileService.instance.writeUri(
-        target,
-        await File(path).readAsBytes(),
+      final bytes = await File(path).readAsBytes();
+      // 内容字节就绪后再让用户选保存位置。
+      final target = await FileService.instance.pickSaveLocation(
+        suggestedName: suggestedName,
+        mime: 'application/pdf',
       );
-      if (!mounted) return;
-      _showMessage(l.format('pdf_exported', {'name': suggestedName}));
+      if (target == null || !mounted) return;
+      try {
+        await FileService.instance.writeUri(target, bytes);
+        if (!mounted) return;
+        _showMessage(l.format('pdf_exported', {'name': suggestedName}));
+      } catch (e, s) {
+        // 修导出:写入失败时清理已 pick 的 0B 文件,避免 Download 残留。
+        await _safeDelete(target);
+        if (!mounted) return;
+        ErrorHandler.report(e, s);
+        _showMessage('${l.t('pdf_export_failed')}: $e');
+      }
     } catch (e, s) {
       if (!mounted) return;
       ErrorHandler.report(e, s);
@@ -294,19 +313,14 @@ class _EditorPageState extends State<EditorPage> {
     if (options == null || !mounted) return;
 
     final suggestedName = _exportFileName(_name, '.docx');
-    final uri = await FileService.instance.pickSaveLocation(
-      suggestedName: suggestedName,
-      mime:
-          'application/vnd.openxmlformats-officedocument'
-          '.wordprocessingml.document',
-    );
-    if (uri == null || !mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(l.t('generating_docx'))));
 
+    // 修导出:先在 isolate 生成 DOCX 字节,失败直接 return,
+    // 不触发 SAF pick → 不会在 Download 物化 0B 文件条目。
     Uint8List bytes;
     try {
       bytes = await runDocxIsolate(md, options);
@@ -318,12 +332,23 @@ class _EditorPageState extends State<EditorPage> {
     }
     if (!mounted) return;
 
+    // 字节就绪后再让用户选保存位置。
+    final uri = await FileService.instance.pickSaveLocation(
+      suggestedName: suggestedName,
+      mime:
+          'application/vnd.openxmlformats-officedocument'
+          '.wordprocessingml.document',
+    );
+    if (uri == null || !mounted) return;
+
     try {
       await FileService.instance.writeUri(uri, bytes);
       final exportedName = await _displayNameFor(uri, fallback: suggestedName);
       if (!mounted) return;
       _showMessage(l.format('docx_exported', {'name': exportedName}));
     } catch (e, s) {
+      // 修导出:写入失败时清理已 pick 的 0B 文件。
+      await _safeDelete(uri);
       if (!mounted) return;
       ErrorHandler.report(e, s);
       _showMessage('${l.t('write_failed')}: $e');
@@ -334,33 +359,42 @@ class _EditorPageState extends State<EditorPage> {
     final l = AppLocalizations.of(context);
     if (!_ensureEditorReady(l)) return;
     final nativeTheme = context.read<ThemeController>().nativeTheme;
-    final markdown = await _editor.getContent();
-    final suggestedName = _exportFileName(_name, '.html');
-    final target = await FileService.instance.pickSaveLocation(
-      suggestedName: suggestedName,
-      mime: 'text/html',
-    );
-    if (target == null) return;
-    final path = await NativeRenderChannel.exportHtml(
-      markdown: markdown,
-      fileName: suggestedName,
-      theme: nativeTheme,
-    );
-    if (!mounted) return;
-    if (path == null) {
-      _showMessage(l.t('html_export_failed'));
-      return;
-    }
     try {
-      await FileService.instance.writeUri(
-        target,
-        await File(path).readAsBytes(),
+      final markdown = await _editor.getContent();
+      final suggestedName = _exportFileName(_name, '.html');
+      // 修导出:先生成 HTML(Kotlin 写 cacheDir 临时文件),失败直接 return,
+      // 不触发 SAF pick → 不会在 Download 物化 0B 文件条目。
+      final path = await NativeRenderChannel.exportHtml(
+        markdown: markdown,
+        fileName: suggestedName,
+        theme: nativeTheme,
       );
       if (!mounted) return;
-      _showMessage(l.format('html_exported', {'name': suggestedName}));
-    } catch (error, stack) {
-      ErrorHandler.report(error, stack);
-      if (mounted) _showMessage('${l.t('html_export_failed')}: $error');
+      if (path == null) {
+        _showMessage(l.t('html_export_failed'));
+        return;
+      }
+      final bytes = await File(path).readAsBytes();
+      // 内容字节就绪后再让用户选保存位置。
+      final target = await FileService.instance.pickSaveLocation(
+        suggestedName: suggestedName,
+        mime: 'text/html',
+      );
+      if (target == null || !mounted) return;
+      try {
+        await FileService.instance.writeUri(target, bytes);
+        if (!mounted) return;
+        _showMessage(l.format('html_exported', {'name': suggestedName}));
+      } catch (error, stack) {
+        // 修导出:写入失败时清理已 pick 的 0B 文件。
+        await _safeDelete(target);
+        ErrorHandler.report(error, stack);
+        if (mounted) _showMessage('${l.t('html_export_failed')}: $error');
+      }
+    } catch (e, s) {
+      if (!mounted) return;
+      ErrorHandler.report(e, s);
+      _showMessage('${l.t('html_export_failed')}: $e');
     }
   }
 

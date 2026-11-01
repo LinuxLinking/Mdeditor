@@ -49,6 +49,15 @@ class SafChannel {
   /// 查询 URI 对应文件的显示名(`OpenableColumns.DISPLAY_NAME`)。
   static Future<String?> queryName(Uri uri) =>
       _ch.invokeMethod<String>('queryName', {'uri': uri.toString()});
+
+  /// 删除 `content://` document URI。
+  /// 修导出:用于导出写入失败时清理已 pick 的 0B 残留文件。
+  static Future<bool> deleteDocument(Uri uri) async {
+    final r = await _ch.invokeMethod<bool>('deleteDocument', {
+      'uri': uri.toString(),
+    });
+    return r ?? false;
+  }
 }
 
 /// 便捷别名:封装 [SafChannel.queryName] 的常见用法。

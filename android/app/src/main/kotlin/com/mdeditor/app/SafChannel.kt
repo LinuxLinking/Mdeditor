@@ -72,6 +72,19 @@ class SafChannel(private val activity: Activity) {
                             result.error("WRITE_FAIL", e.message, null)
                         }
                     }
+                    "deleteDocument" -> {
+                        val uri = Uri.parse(call.argument<String>("uri"))
+                        try {
+                            // 修导出:删除已 pick 的 SAF document 条目,
+                            // 用于导出写入失败时清理 Download 里的 0B 残留文件。
+                            val deleted = android.provider.DocumentsContract.deleteDocument(
+                                activity.contentResolver, uri,
+                            )
+                            result.success(deleted)
+                        } catch (e: Exception) {
+                            result.error("DELETE_FAIL", e.message, null)
+                        }
+                    }
                     "queryName" -> {
                         // Phase 6 修复:之前 Dart 端 [SafColumn.name] 调本方法但
                         // Kotlin 端未实现,导致 MissingPluginException 抛出,

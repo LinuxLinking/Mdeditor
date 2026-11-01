@@ -74,4 +74,7 @@ class FileService {
   Future<void> writeText(Uri uri, String text) async {
     await writeUri(uri, Uint8List.fromList(utf8.encode(text)));
   }
+
+  /// 删除 `content://` URI(修导出:写入失败时清理已创建的 0B 文件)。
+  Future<bool> deleteUri(Uri uri) => SafChannel.deleteDocument(uri);
 }
