@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../file_io/file_service.dart';
 import '../file_io/recent_files.dart';
+import '../file_io/saf_channel.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/error_handler.dart';
 import 'editor_page.dart';
@@ -22,6 +23,49 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _future = _loadRecentFiles();
+    _ensureAllFilesAccess();
+  }
+
+  /// 引导授权"所有文件访问权限"(MANAGE_EXTERNAL_STORAGE)。
+  /// 修 0B 空壳:Android 14 分区存储下 app 默认对 Download 公共目录无权限
+  /// (run-as 实测 ls/rm 均 Permission denied),无法清理保存时 SAF provider
+  /// 物化的 0B 空壳。授权后 deleteZeroSiblings 才能用 File 清理。
+  /// 首次启动未授权时弹一次性引导对话框。
+  Future<void> _ensureAllFilesAccess() async {
+    final granted = await SafChannel.hasAllFilesAccess();
+    if (granted || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showAllFilesAccessDialog();
+    });
+  }
+
+  void _showAllFilesAccessDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清理空壳文件需要授权'),
+        content: const Text(
+          '保存 Markdown 时,系统可能在 Download 目录产生多余的 0B 空壳文件。'
+          '为了自动清理这些空壳,需要授予"所有文件访问权限"。'
+          '这是一次性授权,之后保存体验不变。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('以后再说'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              SafChannel.requestAllFilesAccess();
+            },
+            child: const Text('去授权'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<List<RecentFile>> _loadRecentFiles() {
@@ -31,7 +75,13 @@ class _HomePageState extends State<HomePage> {
   Future<void> _refresh() async {
     if (!mounted) return;
     final future = _loadRecentFiles();
-    setState(() => _future = future);
+    // 修红屏:setState 回调不能返回 Future。之前写 `setState(() => _future = future)`,
+    // 箭头函数返回了赋值表达式的值(future,一个 Future 对象),触发
+    // "setState() callback argument returned a Future" 致命红屏。
+    // 改用块函数体,返回 void。
+    setState(() {
+      _future = future;
+    });
     await future;
   }
 

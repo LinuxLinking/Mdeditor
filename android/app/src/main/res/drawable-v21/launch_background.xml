@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 启动屏背景(API 21+):跟随系统主题色。
-     Android 12+ 走核心应用 splash screen,这里仅作兼容旧版背景。 -->
+<!-- Android 9-11 compatibility launch screen for API 21+ resources. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="?android:colorBackground" />
+    <item android:drawable="@color/launch_bg" />
 
     <item>
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/ic_launcher" />
+            android:src="@drawable/splash_mark" />
     </item>
 </layer-list>

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Animated splash mark for Android 12+ (API 31+) system SplashScreen.
+     Referenced by values-v31*/styles.xml via windowSplashScreenAnimatedIcon.
+     The system plays this once (capped at ~1s) when the cold-start splash is
+     shown, so the mark fades and scales in instead of "snapping" onto screen.
+     Artwork matches splash_mark.xml (static) but is wrapped in a group whose
+     initial alpha is 0 so the pre-animation frame is blank rather than a
+     fully-opaque flash. API <31 uses the static splash_mark.xml via
+     launch_background.xml's <bitmap>, which cannot play animated-vectors. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="96dp"
+            android:height="96dp"
+            android:viewportWidth="96"
+            android:viewportHeight="96">
+            <group
+                android:name="root"
+                android:pivotX="48"
+                android:pivotY="48"
+                android:scaleX="0.85"
+                android:scaleY="0.85"
+                android:alpha="0">
+                <!-- Folded page body. -->
+                <path
+                    android:name="page"
+                    android:fillColor="#FFFFFFFF"
+                    android:pathData="M30,22 C30,19.8 31.8,18 34,18 L57,18 L66,27 L66,74 C66,76.2 64.2,78 62,78 L34,78 C31.8,78 30,76.2 30,74 Z" />
+                <!-- Folded corner. -->
+                <path
+                    android:name="fold"
+                    android:fillColor="#FFB8E5E1"
+                    android:pathData="M57,18 L57,24 C57,25.7 58.3,27 60,27 L66,27 Z" />
+                <!-- Markdown caret. -->
+                <path
+                    android:name="caret"
+                    android:fillColor="#FF0B8F87"
+                    android:pathData="M36,38 L48,50 L60,38 L64,42 L48,58 L32,42 Z" />
+                <!-- Document rule. -->
+                <path
+                    android:name="rule"
+                    android:fillColor="#FF8ACFC9"
+                    android:pathData="M36,64 L60,64 C61.7,64 63,65.3 63,67 C63,68.7 61.7,70 60,70 L36,70 C34.3,70 33,68.7 33,67 C33,65.3 34.3,64 36,64 Z" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="root">
+        <aapt:attr name="android:animation">
+            <set xmlns:android="http://schemas.android.com/apk/res/android">
+                <objectAnimator
+                    android:propertyName="alpha"
+                    android:startOffset="80"
+                    android:duration="500"
+                    android:valueFrom="0"
+                    android:valueTo="1"
+                    android:valueType="floatType"
+                    android:interpolator="@android:interpolator/decelerate_quad" />
+                <objectAnimator
+                    android:propertyName="scaleX"
+                    android:startOffset="80"
+                    android:duration="600"
+                    android:valueFrom="0.85"
+                    android:valueTo="1"
+                    android:valueType="floatType"
+                    android:interpolator="@android:interpolator/decelerate_quad" />
+                <objectAnimator
+                    android:propertyName="scaleY"
+                    android:startOffset="80"
+                    android:duration="600"
+                    android:valueFrom="0.85"
+                    android:valueTo="1"
+                    android:valueType="floatType"
+                    android:interpolator="@android:interpolator/decelerate_quad" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>

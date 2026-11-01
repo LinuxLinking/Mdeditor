@@ -4,6 +4,14 @@
     <!-- Phase 6:Android 13+ 需运行时申请 POST_NOTIFICATIONS,
          不能 maxSdkVersion=33(会让 Android 14+ 不声明,导致通知权限失效) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 修 0B 空壳清理:app 需要访问 Download 公共目录清理保存时产生的 0B 空壳文件。
+         Android 11+ 分区存储下 app 对 Download 目录默认无权限(run-as 实测 ls/rm 均
+         Permission denied),MediaStore delete 也因非 owner 失败。MANAGE_EXTERNAL_STORAGE
+         让 app 能用 File 直接列举/删除 Download 里的同名 0B 空壳。首次启动引导用户授权。 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- Android 10 及以下兼容:WRITE_EXTERNAL_STORAGE 让旧版本也能 File 清理。 -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <application
         android:label="Mdeditor"

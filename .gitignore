@@ -76,6 +76,8 @@ node_modules/
 /scratch/
 /.workbuddy/
 /.tmp_assets/
+/forGithubRepopsitory/
+/scripts/
 
 # Machine-specific configuration and signing material
 android/local.properties

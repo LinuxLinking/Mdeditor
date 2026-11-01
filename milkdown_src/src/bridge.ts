@@ -12,7 +12,7 @@
  */
 import type { Editor } from '@milkdown/kit';
 import { getMarkdown, replaceAll } from '@milkdown/kit/utils';
-import type { EditorTheme } from './main';
+import type { EditorTheme, HighlightSpec } from './main';
 
 export type BridgeMode = 'wysiwyg' | 'source';
 
@@ -120,7 +120,11 @@ export function postBridge(
  * 把已初始化的 [editor] 封装为 BridgeApi 并注册到 `window.bridge`。
  * 由 main.ts 在 `Editor.make().create()` 完成后调用。
  */
-export function setupBridge(editor: Editor, theme: EditorTheme): void {
+export function setupBridge(
+  editor: Editor,
+  theme: EditorTheme,
+  reapplyCodeHighlight: (specs: HighlightSpec[]) => void,
+): void {
   // Coordinates are emitted in the WebView root's coordinate space, matching
   // the Flutter Stack that hosts WebViewWidget. This remains stable for text
   // in paragraphs, tables, and nested code editors.
@@ -221,7 +225,9 @@ export function setupBridge(editor: Editor, theme: EditorTheme): void {
     },
     setTheme(newTheme: EditorTheme) {
       applyThemeVariables(newTheme);
-      // 触发全量重渲染以让 CodeMirror HighlightStyle 重新应用
+      // 重建 CodeMirror HighlightStyle 并重设 codeBlockConfig,使新调色板在下方
+      // replaceAll 重渲染时被新创建的 code block 节点采用(否则 token 颜色仍是 init 时的)。
+      reapplyCodeHighlight(newTheme.codeHighlight || []);
       const md = editor.action(getMarkdown()) ?? '';
       editor.action(replaceAll(md));
       // 让 native_features 刷新 toolbar / 徽章

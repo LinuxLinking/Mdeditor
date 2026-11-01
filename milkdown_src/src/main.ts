@@ -27,6 +27,12 @@ let editor: Editor | null = null;
 let currentTheme: EditorTheme | null = null;
 let currentContent: string = '';  // 保存切换前的编辑器内容
 let editorMode: 'wysiwyg' | 'source' = 'wysiwyg';
+/**
+ * 当前 codeBlock 配置状态。UI 字段（语言表、文案）在 init 时固定；
+ * `extensions`（含 CodeMirror HighlightStyle）随主题切换由
+ * `reapplyCodeHighlight` 替换，使切主题后代码 token 配色真正生效。
+ */
+let codeBlockConfigState: { extensions: any[]; [key: string]: any } | null = null;
 
 /** Theme payload delivered from Dart through `bridge.init`. */
 export interface EditorTheme {
@@ -101,6 +107,30 @@ function buildHighlightStyle(specs: HighlightSpec[]): HighlightStyle {
     };
   }).filter((x): x is NonNullable<typeof x> => x !== null);
   return HighlightStyle.define(styles as any);
+}
+
+/**
+ * 主题切换时重建 CodeMirror HighlightStyle 并重设 `codeBlockConfig`。
+ *
+ * `setTheme` 之前只调 `applyThemeVariables` + `replaceAll`：前者只改 CSS 变量，
+ * 后者虽然重渲染文档,但 CodeMirror 用的是 init 时注入的同一个 `HighlightStyle`
+ * 实例(通过 `codeBlockConfig.extensions` 注册一次),token 配色不会跟随主题变。
+ * 这里用新主题的 specs 重建 HighlightStyle,替换 `codeBlockConfigState.extensions`
+ * 后 `ctx.set` 重设 config;随后的 `replaceAll` 会重建 code block 节点,新节点读取
+ * 新 config,深色/浅色 token 配色才真正切换。
+ */
+function reapplyCodeHighlight(specs: HighlightSpec[]): void {
+  if (!editor || !codeBlockConfigState) return;
+  if (!specs || specs.length === 0) return;
+  try {
+    const style = buildHighlightStyle(specs);
+    codeBlockConfigState.extensions = [syntaxHighlighting(style)];
+    editor.action((ctx: any) => {
+      ctx.set(codeBlockConfig.key, codeBlockConfigState);
+    });
+  } catch (e) {
+    console.error('reapplyCodeHighlight failed', e);
+  }
 }
 
 /**
@@ -220,7 +250,7 @@ async function init(opts: { initialContent: string; theme: EditorTheme }): Promi
           mkLang('markdown', ['md'], []),
         ];
 
-        ctx.set(codeBlockConfig.key, {
+        const codeBlockCfg = {
           extensions: [syntaxHighlighting(codeHighlight)],
           languages: langs,
           expandIcon: '⬇',
@@ -236,14 +266,16 @@ async function init(opts: { initialContent: string; theme: EditorTheme }): Promi
           previewToggleButton: (previewOnly: boolean) => previewOnly ? '编辑' : '隐藏',
           previewLabel: '预览',
           previewLoading: '加载中...',
-        });
+        };
+        codeBlockConfigState = codeBlockCfg;
+        ctx.set(codeBlockConfig.key, codeBlockCfg);
         ctx.get(listenerCtx).markdownUpdated((_ctx, md) => {
           postBridge('changed', { md });
         });
       })
       .create();
 
-    setupBridge(editor, opts.theme);
+    setupBridge(editor, opts.theme, reapplyCodeHighlight);
     // 暴露 codeBlockRef 到全局,防止 tree-shaking 消除
     (window as any).__codeBlockRef = _codeBlockRef;
     postBridge('ready');

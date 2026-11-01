@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Standalone splash mark; it is intentionally not an adaptive-icon layer.
+     All artwork stays inside the Android 12+ splash icon safe zone: a circle
+     of diameter 72dp centered in the 96dp viewport (center 48,48, radius 36).
+     Outer corners of the page sit at distance ~35 from center, so the system's
+     circular mask will not clip them. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+
+    <!-- Folded page body. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,22 C30,19.8 31.8,18 34,18 L57,18 L66,27 L66,74 C66,76.2 64.2,78 62,78 L34,78 C31.8,78 30,76.2 30,74 Z" />
+
+    <!-- Folded corner. -->
+    <path
+        android:fillColor="#FFB8E5E1"
+        android:pathData="M57,18 L57,24 C57,25.7 58.3,27 60,27 L66,27 Z" />
+
+    <!-- Markdown caret, rendered in the brand teal for contrast. -->
+    <path
+        android:fillColor="#FF0B8F87"
+        android:pathData="M36,38 L48,50 L60,38 L64,42 L48,58 L32,42 Z" />
+
+    <!-- Two quiet document rules. -->
+    <path
+        android:fillColor="#FF8ACFC9"
+        android:pathData="M36,64 L60,64 C61.7,64 63,65.3 63,67 C63,68.7 61.7,70 60,70 L36,70 C34.3,70 33,68.7 33,67 C33,65.3 34.3,64 36,64 Z" />
+</vector>

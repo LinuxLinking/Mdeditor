@@ -137,6 +137,12 @@ class _EditorPageState extends State<EditorPage> {
   /// 写入旧 _uri 产生重复文件。
   bool _isSaveAsInProgress = false;
 
+  /// 修双击:标记「保存」进行中。_save 是保存按钮的 onPressed,双击会并发
+  /// 触发两次 _save。_isSaveAsInProgress 只保护 _saveAs 内部,挡不住
+  /// 「第一次 _saveAs 还在 await pick、第二次 _save 又进来」的场景。
+  /// 这里在 _save 入口加一道独立重入闸。
+  bool _isSaving = false;
+
   Future<void> _autoSave() async {
     // 修导出:另存为进行中时跳过,避免 autosave 写旧 uri 与 saveAs 写新 uri 并存。
     if (_isSaveAsInProgress) return;
@@ -164,29 +170,42 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   Future<void> _save() async {
-    final l = AppLocalizations.of(context);
-    if (!_ensureEditorReady(l) || !_initialLoadComplete || _loadError != null) {
+    // 修双击:_save 入口重入闸。双击保存按钮时两次 _save 并发,第二次直接挡掉。
+    if (_isSaving) {
+      debugPrint('[SAVE] rejected: already saving');
       return;
     }
-    final uri = _uri;
-    if (uri == null) {
-      await _saveAs();
-      return;
-    }
-
+    _isSaving = true;
     try {
-      final md = await _editor.getContent();
-      await FileService.instance.writeText(uri, md);
-      _editor.markSaved();
-      if (mounted) setState(() => _lastSavedAt = DateTime.now());
-      if (!mounted) return;
-      _showMessage(
-        AppLocalizations.of(context).format('saved_file', {'name': _name}),
-      );
-    } catch (e, s) {
-      if (!mounted) return;
-      ErrorHandler.report(e, s);
-      _showMessage('${AppLocalizations.of(context).t('save_failed')}: $e');
+      final l = AppLocalizations.of(context);
+      if (!_ensureEditorReady(l) || !_initialLoadComplete || _loadError != null) {
+        return;
+      }
+      final uri = _uri;
+      debugPrint('[SAVE] entered, _uri=$uri, isSaveAs=$_isSaveAsInProgress');
+      if (uri == null) {
+        debugPrint('[SAVE] -> _saveAs (no current uri)');
+        await _saveAs();
+        return;
+      }
+      debugPrint('[SAVE] -> write existing uri=$uri');
+
+      try {
+        final md = await _editor.getContent();
+        await FileService.instance.writeText(uri, md);
+        _editor.markSaved();
+        if (mounted) setState(() => _lastSavedAt = DateTime.now());
+        if (!mounted) return;
+        _showMessage(
+          AppLocalizations.of(context).format('saved_file', {'name': _name}),
+        );
+      } catch (e, s) {
+        if (!mounted) return;
+        ErrorHandler.report(e, s);
+        _showMessage('${AppLocalizations.of(context).t('save_failed')}: $e');
+      }
+    } finally {
+      _isSaving = false;
     }
   }
 
@@ -202,6 +221,7 @@ class _EditorPageState extends State<EditorPage> {
       debugPrint('[SAVEAS] rejected: already in progress');
       return;
     }
+    debugPrint('[SAVEAS] started');
     // 取消已 armed 的 autosave 定时器,并标记进行中,阻止 autosave 写旧 uri。
     _autoSaveTimer?.cancel();
     _isSaveAsInProgress = true;
@@ -229,6 +249,13 @@ class _EditorPageState extends State<EditorPage> {
           uri,
           fallback: _markdownFileName(_name),
         );
+        // 兜底清理:连点保存可能在 Download 留下同名 0B 空壳(Kotlin 并发闸漏网
+        // 或 SAF provider 异常物化),这里扫描删除同前缀的 0B 文件,保证用户
+        // 看不到多余空壳。
+        final cleaned = await FileService.instance.deleteZeroSiblings(name);
+        if (cleaned > 0) {
+          debugPrint('[SAVEAS] cleaned $cleaned zero sibling(s) for $name');
+        }
         if (!mounted) return;
         setState(() {
           _uri = uri;

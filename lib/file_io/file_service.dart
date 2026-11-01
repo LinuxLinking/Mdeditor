@@ -77,4 +77,16 @@ class FileService {
 
   /// 删除 `content://` URI(修导出:写入失败时清理已创建的 0B 文件)。
   Future<bool> deleteUri(Uri uri) => SafChannel.deleteDocument(uri);
+
+  /// 兜底清理:删除 Download 里同 basename 前缀的 0B 空壳文件。
+  /// 修连点保存:保存成功后调用,清掉 Download 里 `xxx (1).md` 等 0B 空壳,
+  /// 保证用户看不到多余空壳。返回删除数量。
+  Future<int> deleteZeroSiblings(String basename) =>
+      SafChannel.deleteZeroSiblings(basename);
+
+  /// 检查是否已获"所有文件访问权限"(MANAGE_EXTERNAL_STORAGE)。
+  Future<bool> hasAllFilesAccess() => SafChannel.hasAllFilesAccess();
+
+  /// 跳转设置页引导授权"所有文件访问权限"。返回当前授权状态。
+  Future<bool> requestAllFilesAccess() => SafChannel.requestAllFilesAccess();
 }

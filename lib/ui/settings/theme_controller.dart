@@ -69,10 +69,91 @@ class ThemeController extends ChangeNotifier {
 
   EditorThemePreference get editorTheme => _editorTheme;
 
+  /// 等宽字体栈，三个主题共用。Android 上多半没装 JetBrains Mono / Fira Code，
+  /// 会自动回退到 Consolas / monospace；有装的设备能拿到更好看的字形。
+  static const _codeFonts = <String>[
+    'JetBrains Mono',
+    'Fira Code',
+    'Source Code Pro',
+    'Cascadia Code',
+    'Consolas',
+    'monospace',
+  ];
+
+  /// 语言徽章颜色（GitHub 语言色板）。当前 editor.css 只用 --code-badge-default，
+  /// 按语言的变量是前向预留，先填上以备后续工具栏着色。
+  static const _codeBadgeMap = <String, String>{
+    'javascript': '#f1e05a',
+    'typescript': '#3178c6',
+    'python': '#3572a5',
+    'bash': '#89e051',
+    'html': '#e34c26',
+    'css': '#563d7c',
+    'json': '#292929',
+    'sql': '#e38c00',
+    'markdown': '#083fa1',
+  };
+
+  /// GitHub Light 代码 token 调色板（对齐 GitHub Primer 浅色）。
+  static const _githubLightHighlight = <NativeCodeHighlight>[
+    NativeCodeHighlight(tag: 'comment', color: '#6e7781'),
+    NativeCodeHighlight(tag: 'string', color: '#0a3069'),
+    NativeCodeHighlight(tag: 'number', color: '#0550ae'),
+    NativeCodeHighlight(tag: 'keyword', color: '#cf222e'),
+    NativeCodeHighlight(tag: 'controlKeyword', color: '#cf222e'),
+    NativeCodeHighlight(tag: 'functionName', color: '#8250df'),
+    NativeCodeHighlight(tag: 'typeName', color: '#953800'),
+    NativeCodeHighlight(tag: 'operator', color: '#0550ae'),
+    NativeCodeHighlight(tag: 'variableName', color: '#24292f'),
+    NativeCodeHighlight(tag: 'regexp', color: '#116329'),
+    NativeCodeHighlight(tag: 'escape', color: '#1a7f37'),
+    NativeCodeHighlight(tag: 'punctuation', color: '#24292f'),
+    NativeCodeHighlight(tag: 'meta', color: '#6e7781'),
+  ];
+
+  /// GitHub Dark 代码 token 调色板（对齐 GitHub Primer 深色）。
+  static const _githubDarkHighlight = <NativeCodeHighlight>[
+    NativeCodeHighlight(tag: 'comment', color: '#8b949e'),
+    NativeCodeHighlight(tag: 'string', color: '#a5d6ff'),
+    NativeCodeHighlight(tag: 'number', color: '#79c0ff'),
+    NativeCodeHighlight(tag: 'keyword', color: '#ff7b72'),
+    NativeCodeHighlight(tag: 'controlKeyword', color: '#ff7b72'),
+    NativeCodeHighlight(tag: 'functionName', color: '#d2a8ff'),
+    NativeCodeHighlight(tag: 'typeName', color: '#ffa657'),
+    NativeCodeHighlight(tag: 'operator', color: '#79c0ff'),
+    NativeCodeHighlight(tag: 'variableName', color: '#e6edf3'),
+    NativeCodeHighlight(tag: 'regexp', color: '#a5d6ff'),
+    NativeCodeHighlight(tag: 'escape', color: '#bb8009'),
+    NativeCodeHighlight(tag: 'punctuation', color: '#e6edf3'),
+    NativeCodeHighlight(tag: 'meta', color: '#8b949e'),
+  ];
+
+  /// Vue 主题代码 token 调色板（浅色底，绿系强调）。
+  static const _vueHighlight = <NativeCodeHighlight>[
+    NativeCodeHighlight(tag: 'comment', color: '#6a737d'),
+    NativeCodeHighlight(tag: 'string', color: '#0b7a57'),
+    NativeCodeHighlight(tag: 'number', color: '#005cc5'),
+    NativeCodeHighlight(tag: 'keyword', color: '#b043c9'),
+    NativeCodeHighlight(tag: 'controlKeyword', color: '#b043c9'),
+    NativeCodeHighlight(tag: 'functionName', color: '#1f6feb'),
+    NativeCodeHighlight(tag: 'typeName', color: '#953800'),
+    NativeCodeHighlight(tag: 'operator', color: '#005cc5'),
+    NativeCodeHighlight(tag: 'variableName', color: '#2c3e50'),
+    NativeCodeHighlight(tag: 'regexp', color: '#0b7a57'),
+    NativeCodeHighlight(tag: 'escape', color: '#1a7f37'),
+    NativeCodeHighlight(tag: 'punctuation', color: '#2c3e50'),
+    NativeCodeHighlight(tag: 'meta', color: '#6a737d'),
+  ];
+
   NativeEditorTheme get nativeTheme {
     switch (_editorTheme) {
       case EditorThemePreference.githubLight:
-        return const NativeEditorTheme(name: 'github-light', variables: {
+        return const NativeEditorTheme(
+          name: 'github-light',
+          codeFonts: _codeFonts,
+          codeBadgeMap: _codeBadgeMap,
+          codeHighlight: _githubLightHighlight,
+          variables: {
           '--editor-bg': '#ffffff',
           '--editor-fg': '#24292f',
           '--editor-muted': '#57606a',
@@ -86,7 +167,12 @@ class ThemeController extends ChangeNotifier {
           '--h6-size': '0.85em', '--h6-color': '#6e7781', '--h6-space': '12px',
         });
       case EditorThemePreference.githubDark:
-        return const NativeEditorTheme(name: 'github-dark', variables: {
+        return const NativeEditorTheme(
+          name: 'github-dark',
+          codeFonts: _codeFonts,
+          codeBadgeMap: _codeBadgeMap,
+          codeHighlight: _githubDarkHighlight,
+          variables: {
           '--editor-bg': '#0d1117',
           '--editor-fg': '#e6edf3',
           '--editor-muted': '#8b949e',
@@ -100,7 +186,12 @@ class ThemeController extends ChangeNotifier {
           '--h6-size': '0.85em', '--h6-color': '#8b949e', '--h6-space': '12px',
         });
       case EditorThemePreference.vue:
-        return const NativeEditorTheme(name: 'vue', variables: {
+        return const NativeEditorTheme(
+          name: 'vue',
+          codeFonts: _codeFonts,
+          codeBadgeMap: _codeBadgeMap,
+          codeHighlight: _vueHighlight,
+          variables: {
           '--editor-bg': '#f8faf9',
           '--editor-fg': '#2c3e50',
           '--editor-muted': '#6b7280',

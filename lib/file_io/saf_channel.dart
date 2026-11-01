@@ -58,6 +58,32 @@ class SafChannel {
     });
     return r ?? false;
   }
+
+  /// 兜底清理:删除 Download 里同 basename 前缀的 0B 空壳文件。
+  /// 修连点保存:连点保存按钮会在 Download 留下 `xxx (1).md`、`xxx (2).md` 等 0B
+  /// 空壳(Download provider 对同名加后缀)。Kotlin 侧扫描 MediaStore downloads,
+  /// 删除 displayName 以 basename 主名开头、size=0、且非 basename 本身的文件。
+  /// 返回删除的文件数。
+  static Future<int> deleteZeroSiblings(String basename) async {
+    final r = await _ch.invokeMethod<int>('deleteZeroSiblings', {
+      'basename': basename,
+    });
+    return r ?? 0;
+  }
+
+  /// 检查 app 是否已获"所有文件访问权限"(MANAGE_EXTERNAL_STORAGE)。
+  /// 授权后 [deleteZeroSiblings] 才能用 File 清理 Download 里的 0B 空壳。
+  static Future<bool> hasAllFilesAccess() async {
+    final r = await _ch.invokeMethod<bool>('hasAllFilesAccess');
+    return r ?? false;
+  }
+
+  /// 跳转系统设置页引导用户授权"所有文件访问权限"。返回当前授权状态
+  /// (true=已授权,false=已跳转设置页待用户操作)。
+  static Future<bool> requestAllFilesAccess() async {
+    final r = await _ch.invokeMethod<bool>('requestAllFilesAccess');
+    return r ?? false;
+  }
 }
 
 /// 便捷别名:封装 [SafChannel.queryName] 的常见用法。
